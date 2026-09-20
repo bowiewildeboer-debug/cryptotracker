@@ -5,6 +5,7 @@ import { buildUniverse, type Universe } from './data/universe.ts';
 import { fetchDailyCandles, fetchDailyCandlesMany } from './data/binance.ts';
 import { analyseCoin, referenceIndex, type CoinSignals, type MarketContext } from './analysis/signals.ts';
 import { simulate, type DayInput, type PortfolioResult, type UniverseCoin } from './analysis/portfolio.ts';
+import { buildPeriodicReport, type PeriodicReport, type PeriodTimeframe } from './report/periodic.ts';
 import { compare } from './indicators/predicates.ts';
 import { ichimoku } from './indicators/ichimoku.ts';
 import type { Candle } from './types.ts';
@@ -29,6 +30,7 @@ export interface Report {
   sections: Sections;
   universe: { size: number; excluded: Universe['excluded']; warnings: string[] };
   portfolio: PortfolioResult | null;
+  periodic: Record<string, PeriodicReport>;
   timings: Record<string, number>;
 }
 
@@ -64,6 +66,8 @@ export interface RunOptions {
   /** Limit the universe, for development. */
   limit?: number;
   write?: boolean;
+  /** Also build these period reports. They reuse the candles already fetched. */
+  periods?: PeriodTimeframe[];
 }
 
 export async function runDaily(opts: RunOptions = {}): Promise<Report> {
@@ -131,6 +135,16 @@ export async function runDaily(opts: RunOptions = {}): Promise<Report> {
   }
 
   t = Date.now();
+  const periodic: Record<string, PeriodicReport> = {};
+  const withCandles = coins
+    .map((c) => ({ ...c, daily: candles.get(c.binanceSymbol) ?? [] }))
+    .filter((c) => c.daily.length > 0);
+  for (const tf of opts.periods ?? []) {
+    periodic[tf] = buildPeriodicReport(withCandles, ctx, tf);
+  }
+  mark('periodic', t);
+
+  t = Date.now();
   const portfolio = opts.skipPortfolio ? null : runPortfolio(params);
   mark('portfolio', t);
 
@@ -143,12 +157,18 @@ export async function runDaily(opts: RunOptions = {}): Promise<Report> {
     sections: assignSections(analysed),
     universe: { size: coins.length, excluded: universe.excluded, warnings: [...universe.warnings, ...missing] },
     portfolio,
+    periodic,
     timings,
   };
 
   if (opts.write !== false) {
     mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(join(DATA_DIR, 'latest.json'), JSON.stringify(report));
+    const reportsDir = join(DATA_DIR, 'reports');
+    mkdirSync(reportsDir, { recursive: true });
+    for (const [tf, r] of Object.entries(periodic)) {
+      writeFileSync(join(reportsDir, `${tf}-${r.periodEnd}.json`), JSON.stringify(r));
+    }
   }
   return report;
 }

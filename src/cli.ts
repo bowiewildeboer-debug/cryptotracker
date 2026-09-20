@@ -7,8 +7,13 @@ const flag = (name: string): string | undefined => {
 };
 
 const limit = flag('limit');
+const which = flag('report') ?? 'daily';
+const periods =
+  which === 'all' ? (['weekly', 'monthly'] as const) : which === 'daily' ? ([] as const) : ([which] as const);
+
 const report = await runDaily({
   ...(limit ? { limit: Number(limit) } : {}),
+  periods: [...periods] as ('weekly' | 'monthly')[],
   skipPortfolio: args.includes('--no-portfolio'),
   write: !args.includes('--dry-run'),
 });
@@ -43,6 +48,14 @@ if (report.universe.warnings.length > 0) {
   console.log('\nwarnings:');
   for (const w of report.universe.warnings) console.log(`  ! ${w}`);
 }
+for (const [tf, r] of Object.entries(report.periodic)) {
+  console.log(`
+=== ${tf} report, period ending ${r.periodEnd} (previous: ${r.previousPeriodEnd ?? 'n/a'}) ===`);
+  console.log(`  in trend: ${r.inTrend.length}   not in trend: ${r.notInTrend.length}`);
+  if (r.changes.length === 0) console.log('  no changes versus the previous period');
+  for (const ch of r.changes) console.log(`  ${ch.symbol.padEnd(6)} ${ch.what}`);
+}
+
 if (report.portfolio) {
   const last = report.portfolio.series.at(-1)!;
   console.log(`\nportfolio (${report.portfolio.series.length} day(s) since ${report.portfolio.config.startDate}):`);

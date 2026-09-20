@@ -30,7 +30,11 @@ export interface EmaCellResult {
   value: number | null;
   /** Upper bound on the seed-induced error of `value`, in price units. */
   uncertainty: number | null;
-  /** `ok` is the only state that can earn a point; see `docs/SPEC.md` 5.2. */
+  /**
+   * How converged the EMA is. This drives DISPLAY only (a provisional value is greyed).
+   * Whether the cell can be scored is decided by `verdict`, which already has the
+   * uncertainty folded into its neutral band.
+   */
   state: 'ok' | 'provisional' | 'na';
   verdict: Verdict;
   /** Did C0's daily candle touch this level? Bowie wants this for every EMA except daily-21. */
@@ -355,7 +359,12 @@ export function scoreCoin(s: ScoreInput, params: Params): ScoreResult {
   const shares = distribute(w.emaTotal, s.ema.length);
   s.ema.forEach((cell, i) => {
     const of = shares[i] ?? 0;
-    add(`EMA${cell.period} ${cell.timeframe}`, cell.verdict === 'above' ? of : 0, of, cell.state === 'ok');
+    // Counted whenever the verdict is DEFINITE. `compare` already widened its neutral band by
+    // the EMA's own uncertainty, so an "above" here means above even under the worst-case
+    // seed - demanding full convergence on top of that would drop cells whose answer is not
+    // actually in doubt, and empty most of the monthly column for no gain.
+    const decided = cell.verdict === 'above' || cell.verdict === 'below';
+    add(`EMA${cell.period} ${cell.timeframe}`, cell.verdict === 'above' ? of : 0, of, decided);
   });
 
   let points = 0;

@@ -103,13 +103,35 @@ describe('analyseCoin', () => {
     expect(r.ema).toHaveLength(emaCells(params).length);
   });
 
-  it('refuses to score an EMA that has not converged', () => {
-    // 120 daily candles is far too few for a weekly EMA100 to mean anything.
+  it('refuses to score an EMA that has no value at all', () => {
+    // 120 daily candles is only 18 weeks, so a weekly EMA100 cannot exist.
     const r = analyseCoin(coin('young', 'YOUNG', series(120, (i) => 100 + i)), ctxWith())!;
     const weekly100 = r.ema.find((e) => e.period === 100 && e.timeframe === 'weekly')!;
-    expect(weekly100.state).not.toBe('ok');
+    expect(weekly100.value).toBeNull();
+    expect(weekly100.verdict).toBe('unknown');
     expect(r.score.breakdown.find((b) => b.label === 'EMA100 weekly')?.counted).toBe(false);
     expect(r.score.unavailable).toBeGreaterThan(0);
+  });
+
+  it('still scores an unconverged EMA when the price is far enough away to be certain', () => {
+    // 400 daily candles is 57 weeks. A weekly EMA21 there has real seed uncertainty left,
+    // but on a steadily compounding series the price is above it under ANY seed, so the
+    // verdict is not in doubt and the cell must count.
+    const r = analyseCoin(coin('a', 'A', series(400, (i) => 100 * Math.pow(1.01, i))), ctxWith())!;
+    const cell = r.ema.find((e) => e.period === 21 && e.timeframe === 'weekly')!;
+    expect(cell.state).not.toBe('na');
+    expect((cell.uncertainty as number)).toBeGreaterThan(0);
+    expect(cell.verdict).toBe('above');
+    expect(r.score.breakdown.find((b) => b.label === 'EMA21 weekly')?.counted).toBe(true);
+  });
+
+  it('leaves a cell uncounted when the uncertainty genuinely straddles the price', () => {
+    // A weekly EMA55 on the same 57 weeks has only two bars of warm-up, so the seed still
+    // dominates and no honest verdict is possible.
+    const r = analyseCoin(coin('a', 'A', series(400, (i) => 100 * Math.pow(1.01, i))), ctxWith())!;
+    const cell = r.ema.find((e) => e.period === 55 && e.timeframe === 'weekly')!;
+    expect(cell.verdict).toBe('at');
+    expect(r.score.breakdown.find((b) => b.label === 'EMA55 weekly')?.counted).toBe(false);
   });
 
   it('keeps points, max and unavailable consistent with the breakdown', () => {
