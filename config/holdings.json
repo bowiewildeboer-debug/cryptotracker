@@ -1,0 +1,4 @@
+{
+  "$comment": "Coins Bowie owns. These always appear in the report regardless of their state. Editable in the app; the app writes this same shape.",
+  "owned": []
+}

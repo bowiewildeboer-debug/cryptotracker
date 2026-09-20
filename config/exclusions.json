@@ -1,0 +1,9 @@
+{
+  "$comment": "Manual overrides on top of the automatic stablecoin/wrapped filtering. See docs/SPEC.md section 2.2.",
+  "denyTags": ["stablecoin", "wrapped-tokens", "liquid-staking", "tokenized-gold"],
+  "$denyTagsNote": "Exact tag equality only. 'stablecoin-protocol' must NOT match - ENA, SKY, FF are real trend assets.",
+  "deny": [],
+  "$denyNote": "CoinGecko coin ids to always exclude, e.g. tokenized RWA funds and exchange tokens.",
+  "allow": [],
+  "$allowNote": "CoinGecko coin ids to always keep, overriding every automatic exclusion."
+}

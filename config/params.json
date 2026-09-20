@@ -1,0 +1,50 @@
+{
+  "$comment": "Bowie's own indicator settings, from the TradingView script 'Ichimoku Kinko Hyo Cloud - no offset - no repaint' by KryptoNight. See docs/SPEC.md section 3.",
+  "ichimoku": {
+    "tenkan": 13,
+    "kijun": 35,
+    "kijunAux": 55,
+    "senkouB": 55,
+    "displacement": 35,
+    "extraBars": 1,
+    "$shiftNote": "Plotted shift = displacement - extraBars = 34. Verified against the script's Pine source; matches TradingView's own off-by-one.",
+    "senkouASource": "tenkan+kijun",
+    "$senkouASourceNote": "RESOLVED 2026-09-20 from the Pine source: leadingSpanA = avg(conversion, baseline) = (tenkan + kijun) / 2. The auxiliary base line is plot-only and feeds no formula.",
+    "cloudMode": "displaced",
+    "$cloudModeOptions": ["displaced", "noOffset"],
+    "$cloudModeNote": "OPEN POINT E - the script draws BOTH a standard displaced cloud and a 'no offset' cloud. 'displaced' = classic Ichimoku, cloud at bar t comes from senkou[t-34]. 'noOffset' = cloud at bar t comes from senkou[t]. Both are computed; this selects which one drives the table and the score."
+  },
+  "ema": {
+    "periods": [21, 55, 100],
+    "usage": {
+      "$comment": "Exactly which EMA is used on which timeframe. Cells not listed are never shown and never scored.",
+      "21": ["weekly", "monthly"],
+      "55": ["daily", "weekly"],
+      "100": ["daily", "weekly"]
+    },
+    "convergence": {
+      "okMaxRelError": 0.001,
+      "provisionalMaxRelError": 0.01
+    }
+  },
+  "timeframes": {
+    "kijun": ["daily", "weekly"],
+    "cloud": ["daily", "weekly"]
+  },
+  "universe": {
+    "targetSize": 100,
+    "fetchSize": 250
+  },
+  "data": {
+    "maxDailyCandles": 3000,
+    "klineConcurrency": 6
+  },
+  "score": {
+    "kijunDaily": 25,
+    "kijunWeekly": 15,
+    "coinBtcInTrend": 20,
+    "cloudDaily": { "above": 12, "in": 4, "below": 0 },
+    "cloudWeekly": { "above": 8, "in": 3, "below": 0 },
+    "emaTotal": 20
+  }
+}

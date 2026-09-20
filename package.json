@@ -1,0 +1,25 @@
+{
+  "name": "cryptotracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal crypto trend watcher: custom Ichimoku (Kijun 35) + EMA 21/55/100 over the CMC top 100",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "run:daily": "tsx src/cli.ts --report daily",
+    "run:weekly": "tsx src/cli.ts --report weekly",
+    "run:monthly": "tsx src/cli.ts --report monthly"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}
