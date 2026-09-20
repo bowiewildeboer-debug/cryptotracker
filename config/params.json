@@ -39,6 +39,23 @@
     "maxDailyCandles": 3000,
     "klineConcurrency": 6
   },
+  "portfolio": {
+    "$comment": "Two simulated portfolios. Informational only - nothing is ever traded. See docs/SPEC.md section 11.",
+    "startDate": "2026-09-20",
+    "startCapitalEur": 10000,
+    "feeRate": 0.0015,
+    "minTradeUsd": 1,
+    "fxSymbol": "EURUSDT",
+    "strategy": {
+      "topRankCount": 10,
+      "topMinWeight": 0.5,
+      "altMaxWeight": 0.05,
+      "$weightNote": "Top-10 coins share at least 50% (up to 100%) pro rata by market cap. Coins ranked 11+ are split evenly at no more than 5% each, so they never exceed 50% in total. Whatever cannot be allocated stays in stablecoins - up to 100% when nothing qualifies.",
+      "altcoinGate": { "line": "tenkan", "series": "coinBtc" },
+      "$altcoinGateNote": "An altcoin must be above its daily Kijun in USD AND above the Tenkan-13 of its {coin}/BTC series. Deliberately faster than the report's preferBtc flag, which stays on the Kijun.",
+      "rebalance": { "onSetChange": true, "weekly": true }
+    }
+  },
   "score": {
     "kijunDaily": 25,
     "kijunWeekly": 15,

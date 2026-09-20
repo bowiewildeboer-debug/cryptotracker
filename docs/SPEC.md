@@ -461,7 +461,109 @@ first. Full mechanics: see the web-push section of `docs/RESEARCH.md`.
 
 ---
 
-## 11. Non-goals
+## 11. Portfolio simulation
+
+Two simulated portfolios run alongside the report, both starting with **€10 000 on
+2026-09-20** (`portfolio.startDate`, `portfolio.startCapitalEur`). They answer one question:
+*what does following the rules actually buy me over just holding everything?*
+
+**This is a tracker, not a trading system.** Nothing is ever executed. Both portfolios are
+informational simulations.
+
+### 11.1 Common conventions
+
+| Convention | Value |
+|---|---|
+| Internal currency | **USD** (all candle data is USDT-quoted) |
+| Display currency | **EUR**, via Binance `EURUSDT` daily close |
+| Valuation moment | the daily close of `C0` (§6) |
+| Transaction fee | **0.15%** of the absolute notional traded, on both buys and sells |
+| Cash | held as a **USD stablecoin** — it therefore carries EUR/USD exchange-rate exposure, which is shown separately |
+| Start | €10 000 converted to USD at the `EURUSDT` close of the start date |
+
+**The portfolio state is derived, never incrementally mutated.** Every run replays the whole
+history from the start date out of the committed daily universe snapshots plus candle data.
+A missed run therefore heals itself on the next run instead of corrupting the series. When a
+day's universe snapshot is missing, the previous day's ranks and market caps are carried
+forward and the gap is logged.
+
+Both portfolios start on 2026-09-20 by explicit choice — there is no historical backtest.
+The indicators themselves still use all available history.
+
+### 11.2 Portfolio A — "HODL" benchmark
+
+Buy once, never touch again.
+
+* On the start date, buy the **entire universe** (§2, top 100 after exclusions) weighted by
+  market cap on that date.
+* One 0.15% fee on the initial purchase.
+* Units are then **fixed forever**. No rebalancing, no reaction to index changes — that is
+  what buy-and-hold means, and it is what makes it an honest benchmark.
+* `value(t) = Σ unitsᵢ × closeᵢ(t)`
+* If a coin stops trading, its last available price is carried forward and the position is
+  flagged `stale` in the output. It is never silently dropped.
+
+### 11.3 Portfolio B — "Strategy"
+
+#### Qualification on day `t`
+
+| Asset | Qualifies when |
+|---|---|
+| BTC | `close_BTC(t) > kijunDaily_BTC(t)` |
+| any altcoin `X` | `close_X(t) > kijunDaily_X(t)` **and** `close_X/BTC(t) > tenkanDaily_X/BTC(t)` |
+
+The altcoin gate uses the **Tenkan-sen (13)** of the `{coin}/BTC` series — the synthetic ratio
+of §4.4 — not the Kijun. This is deliberately faster than the `preferBtc` report flag (§7),
+which stays on the Kijun. Report = conservative signal; portfolio = tactical rotation.
+
+#### Target weights
+
+Let `T` = qualifying coins ranked **1–10**, `A` = qualifying coins ranked **11+**.
+Ranks are within the *filtered* universe, so stablecoins and wrapped assets never occupy a
+top-10 slot.
+
+```
+wA_each  = |A| > 0 ? min(0.05, 0.50 / |A|) : 0     // max 5% per coin, max 50% in total
+wA_total = |A| * wA_each
+wT_total = 1 - wA_total                            // so T always gets at least 50%
+```
+
+* `A` is split **evenly**: every coin outside the top 10 gets the same weight, capped at 5%.
+  With more than 10 qualifying altcoins each simply gets less than 5%, never more in total.
+* `wT_total` is split **pro rata by market cap** across `T`.
+* **If `T` is empty, `wT_total` stays in cash.** It is a direct consequence of the rules, not
+  a special case: altcoins can never hold more than 50% between them, so with no qualifying
+  top-10 coin the portfolio is at least half in stablecoins.
+* If nothing qualifies at all, the portfolio is **100% stablecoin**. Explicitly allowed.
+
+#### Rebalancing
+
+Traded on a day when **either**:
+
+1. the qualifying set changed — a coin entered or left, or
+2. it is the first valuation day of a new UTC week (§4.3 week anchor).
+
+Between rebalances the positions simply drift with price; no trading, no fees.
+
+### 11.4 Output
+
+`data/portfolio.json`:
+
+```
+startDate, startCapitalEur, feeRate, params
+eurUsd:    { date -> rate }
+series:    [ { date, hodlEur, hodlUsd, strategyEur, strategyUsd, cashUsd, qualifyingCount } ]
+holdings:  { hodl: [...], strategy: [...] }     // current units, weight, value, stale flag
+trades:    [ { date, symbol, side, notionalUsd, feeUsd, reason } ]
+stats:     { since start: return %, max drawdown %, best/worst day, days in cash, total fees }
+```
+
+Both curves, the cash share and the qualifying-coin count are charted in the app, plus a
+plain "strategy vs hodl" difference in euros — the number Bowie actually wants to look at.
+
+---
+
+## 12. Non-goals
 
 * No shorting signals, no leverage, no order execution.
 * No intraday timeframes (< 1 day).

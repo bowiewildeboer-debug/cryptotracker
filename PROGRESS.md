@@ -13,6 +13,10 @@ Een persoonlijke crypto **trendwatcher** voor Bowie. Elke dag (+ wekelijks/maand
 rapport met de CMC top-100 (excl. stablecoins), beoordeeld op een **eigen Ichimoku-setup** en
 **EMA 21/55/100**, met als doel: welke munten staan er technisch gunstig bij om te kopen.
 
+Daarnaast lopen er **twee gesimuleerde portefeuilles** mee, beide gestart met €10.000 op
+2026-09-20: een HODL-benchmark (alles kopen naar marktcap, nooit meer aanraken) en de strategie
+zelf. Puur informatief — er wordt nooit iets echt verhandeld.
+
 Volledige functionele eisen: [`docs/SPEC.md`](docs/SPEC.md) — dat is het contract, niet dit bestand.
 
 ---
@@ -70,11 +74,12 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 |---|---|---|---|
 | 0 | Onderzoek databronnen & infra | ✅ klaar | `docs/RESEARCH.md` |
 | 1 | Repo-skelet, specs, config | ✅ klaar | `docs/SPEC.md`, `config/`, `package.json` |
-| 2 | Indicator-engine + tests | 🟡 bezig | `src/indicators/*`, groene unit-tests tegen bekende waarden |
-| 3 | Datalaag: coinlijst, symbol-mapping, klines, cache | ⬜ open | `src/data/*`, lokale cache met echte candles |
+| 2 | Indicator-engine + tests | ✅ klaar | `src/indicators/*`, `src/data/aggregate.ts` — 41 tests groen |
+| 2b | Portefeuille-simulatie + tests | ✅ klaar | `src/analysis/portfolio.ts` — 22 tests groen |
+| 3 | Datalaag: coinlijst, symbol-mapping, klines, cache | 🟡 volgende | `src/data/*`, lokale cache met echte candles |
 | 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | ⬜ open | `src/analysis/*`, `data/latest.json` |
 | 5 | Rapportgeneratie (dag/week/maand) | ⬜ open | `src/report/*` |
-| 6 | Web-app (PWA) — tabel, mobiel + laptop | ⬜ open | `web/` |
+| 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ⬜ open | `web/` |
 | 7 | Web Push notificaties | ⬜ open | `src/notify/*`, service worker |
 | 8 | GitHub Actions: cron + deploy | ⬜ open | `.github/workflows/*` |
 | 9 | Validatie tegen jouw TradingView-chart | ⬜ open | Handmatige check van 5 munten |
@@ -102,13 +107,18 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | D | iPhone of Android? | Chunk 7 | ❓ vraag aan Bowie |
 | E | Lees je de **verschoven** cloud of de **no-offset** cloud van dat script? | Chunk 4 (weergave) | ❓ vraag aan Bowie — beide worden berekend, `cloudMode` schakelt |
 | F | Staat "Displacement: additional bars" bij jou op 1? | Chunk 2 | ❓ vraag aan Bowie — bepaalt of de shift 34 of iets anders is |
+| G | Rapport gebruikt de **Kijun** van het BTC-paar, portefeuille de **Tenkan**. Bewust? | Chunk 4 | ❓ vraag aan Bowie — beide zijn gebouwd zoals opgegeven |
 
 ---
 
 ## 7. Werk in uitvoering
 
-_Chunk 2_ — indicator-engine in `src/indicators/`. Contract staat in `docs/SPEC.md` §5.
-Niets half-af achtergelaten.
+_Chunk 3_ — datalaag. Contract: `docs/SPEC.md` §§2, 4. Geverifieerde endpoints en valkuilen
+staan in `docs/RESEARCH.md` §§1–3 — niet opnieuw opzoeken.
+
+Te bouwen: CoinGecko-ranglijst + stablecoinfilter, symbol-resolutie via coin-id (nooit op
+ticker matchen), Binance kline-fetcher met rate-limit-backoff, `EURUSDT` voor de euro-koers,
+en de synthetische `{coin}/BTC`-reeks. Niets half-af achtergelaten.
 
 ---
 
@@ -121,3 +131,10 @@ Niets half-af achtergelaten.
 - **2026-09-20 s1** — Open punt A opgelost via de Pine-broncode: het script is KryptoNight's
   "Ichimoku Kinko Hyo Cloud – no offset – no repaint"; de auxiliary voedt geen enkele formule.
   Web-push-ontwerp vastgelegd (GitHub Pages + secret, geen backend). Chunk 1 afgerond.
+- **2026-09-20 s1** — Chunk 2 af: Donchian, Ichimoku, EMA, predicaten en week/maand-aggregatie,
+  41 tests groen. EMA draagt een exacte foutgrens mee i.p.v. een vuistregel, zodat een
+  niet-geconvergeerde EMA nooit een groen vinkje kan opleveren.
+- **2026-09-20 s1** — Nieuwe eis van Bowie: twee meelopende portefeuilles (€10.000 vanaf
+  2026-09-20). Verdeelregel vastgelegd in `docs/SPEC.md` §11. Chunk 2b af, 22 tests groen.
+  Belangrijk gevolg van de regel: kwalificeert er géén top-10-munt, dan staat minstens de
+  helft van de portefeuille in stablecoins — dat volgt rechtstreeks uit de 5%-cap.
