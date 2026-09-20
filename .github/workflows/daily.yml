@@ -113,10 +113,15 @@ jobs:
           DEAD: ${{ needs.report.outputs.deadsubs }}
           REPO: ${{ github.repository }}
         run: |
+          {
+            echo "Deze abonnementen gaven 404 of 410 terug en zijn vervallen: $DEAD"
+            echo
+            echo "Open de tracker, klap **Meldingen op dit apparaat** open, zet meldingen"
+            echo "opnieuw aan en plak de nieuwe sleutel in de bijbehorende secret onder"
+            echo "Settings -> Secrets and variables -> Actions."
+            echo
+            echo "Tot dat gebeurt komt er van dat apparaat geen melding meer binnen."
+          } > issue-body.md
           gh issue create --repo "$REPO" \
             --title "Push-abonnement verlopen - opnieuw koppelen" \
-            --body "Deze abonnementen gaven 404/410 terug en zijn vervallen: $DEAD
-
-          Open de tracker, klap **Meldingen op dit apparaat** open, zet meldingen opnieuw aan en
-          plak de nieuwe sleutel in de bijbehorende secret onder Settings -> Secrets and
-          variables -> Actions. Tot dat gebeurt komt er van dat apparaat niets meer binnen."
+            --body-file issue-body.md
