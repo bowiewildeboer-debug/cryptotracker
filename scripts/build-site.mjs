@@ -13,7 +13,12 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
 cpSync('web', out, { recursive: true });
-if (existsSync('data')) cpSync('data', `${out}/data`, { recursive: true });
-else console.warn('no data/ directory - run the pipeline first or the app will show an error');
+if (existsSync('data/latest.json')) {
+  cpSync('data', `${out}/data`, { recursive: true });
+} else {
+  console.error('ERROR: data/latest.json is missing. Run the pipeline first (npx tsx src/cli.ts);');
+  console.error('deploying without it would publish an app that cannot load anything.');
+  process.exit(1);
+}
 
 console.log(`built ${out}`);

@@ -80,9 +80,9 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | ✅ klaar | `src/analysis/signals.ts`, `src/pipeline.ts`, `data/latest.json` |
 | 5 | Rapportgeneratie (week/maand-varianten) | ✅ klaar | `src/report/periodic.ts` |
 | 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ✅ klaar | `web/` — getest in de browser, mobiel en desktop |
-| 7 | Web Push notificaties | 🟡 volgende | `src/notify/*` (service worker staat al klaar) |
-| 8 | GitHub Actions: cron + deploy | ⬜ open | `.github/workflows/*` |
-| 9 | Validatie tegen jouw TradingView-chart | ⬜ open | Handmatige check van 5 munten |
+| 7 | Web Push notificaties | ✅ klaar | `src/notify/push.ts`, `web/push.js`, `scripts/send-push.ts` |
+| 8 | GitHub Actions: cron + deploy | ✅ klaar | `.github/workflows/daily.yml`, `README.md` |
+| 9 | Validatie tegen jouw TradingView-chart | 🟡 volgende | Handmatige check van 5 munten |
 
 ---
 
@@ -110,16 +110,22 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | G | Kijun of Tenkan voor het BTC-paar | — | ✅ **Kijun**, overal |
 | H | 15 échte top-100-munten staan niet op Binance (HYPE #10, XMR #12, CRO, KAS, PI, FLR…) | — | ✅ **akkoord** — zo laten, wordt in het rapport getoond |
 | I | CoinGecko demo-key | — | ✅ **geregeld**, staat in `.env` (gitignored) → run ging van 63s naar 3s |
-| J | `data/latest.json` is ~380 KB per dag; dagelijks committen = ~140 MB/jaar | Chunk 8 | ⚠️ oplossen met een roulerend venster van 120 dagen |
+| J | Repo-groei door dagelijks een groot bestand te committen | — | ✅ **opgelost** — `latest.json` wordt niet meer gecommit maar direct naar Pages gepubliceerd; alleen de dagsnapshots (~11 KB) gaan de repo in |
+| K | Eerste live run + meldingen koppelen | Chunk 9 | ❓ **actie voor Bowie** — zie `README.md` |
 
 ---
 
 ## 7. Werk in uitvoering
 
-_Chunk 7_ — web push. Contract: `docs/SPEC.md` §10, mechaniek in `docs/RESEARCH.md` §7.
-De service worker (`web/sw.js`) heeft de `push`- en `notificationclick`-handlers al.
-Te bouwen: VAPID-sleutels genereren, een knop in de app om te abonneren + het abonnement
-tonen om te plakken, en `src/notify/push.ts` dat vanuit Actions verstuurt.
+_Chunk 9_ — validatie tegen Bowie's eigen TradingView-chart. Dit is de laatste stap en
+alleen Bowie kan hem zetten: hij leest voor 3–5 munten de Kijun-sen, de cloudgrenzen en één
+EMA van zijn scherm, en die leggen we naast `data/latest.json`.
+
+Verwacht: kleine afwijkingen, want TradingView gebruikt mogelijk een ander paar of een andere
+databron dan Binance-USDT, en Ichimoku-lijnen zijn pure high/low-middelpunten en dus gevoelig
+voor één afwijkende wiek. Een afwijking van meer dan een procent op de Kijun wijst op iets
+structureels (verkeerde verschuiving, verkeerd paar).
+
 Niets half-af achtergelaten.
 
 **Draaien:**
@@ -178,3 +184,10 @@ Niets half-af achtergelaten.
   versie), het verschil tussen beide portefeuilles toonde "+€ -0,00" door negatieve nul, en de
   grafiek zette bij één meetpunt twee stippen op verschillende hoogtes terwijl de bedragen
   tot op de cent gelijk waren.
+- **2026-09-21 s1** — Chunk 7 en 8 af. Web push werkt zonder backend: het abonnement wordt
+  eenmalig in een GitHub-secret geplakt, en het verlopen ervan wordt van twee kanten opgevangen
+  (de app vergelijkt bij elke opening, de nachtrun opent een issue bij een 404/410).
+  Bewust níet gekozen: een schrijftoken in de browser — `github.io` is één origin die alle
+  Pages-projecten van een account delen.
+  Workflow draait dagelijks om 01:17 UTC, draait eerst de tests, commit alleen de dagsnapshot
+  en publiceert de app als artefact.

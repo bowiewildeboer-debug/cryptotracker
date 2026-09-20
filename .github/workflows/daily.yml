@@ -1,0 +1,122 @@
+name: daily report
+
+on:
+  schedule:
+    # 01:17 UTC. Two deliberate choices:
+    #   - 01:00 UTC is ~75 minutes after the daily candle closes, so the data is settled.
+    #   - :17 rather than :00 because GitHub's scheduler queues heavily on the hour and
+    #     scheduled runs routinely drift 5-30 minutes there.
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Only analyse the first N coins (leave empty for all 100)'
+        required: false
+        type: string
+
+# Least privilege, and each one is needed:
+#   contents: commit the day's history snapshot back, which the portfolio replay depends on
+#   pages + id-token: publish the app
+#   issues: raise the alarm when a push subscription has expired
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+# Never let two runs fight over the same commit; a queued one supersedes a running one.
+concurrency:
+  group: daily-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    # A hung API call would otherwise be free to run for six hours and eat the monthly budget.
+    timeout-minutes: 20
+    outputs:
+      deadsubs: ${{ steps.push.outputs.dead }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run tests
+        # A broken indicator must never be published as if it were a real signal.
+        run: npm test
+
+      - name: Build report
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+        run: npx tsx src/cli.ts --report all ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+
+      - name: Commit the day's snapshot
+        run: |
+          git config user.name  "cryptotracker-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/history
+          # Nothing to commit is a normal outcome when a run is repeated on the same day.
+          git diff --cached --quiet && echo "no new snapshot" && exit 0
+          git commit -m "data: snapshot $(date -u +%F)"
+          git push
+
+      - name: Send push notification
+        id: push
+        env:
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+          PUSH_SUBSCRIPTION_PHONE: ${{ secrets.PUSH_SUBSCRIPTION_PHONE }}
+          PUSH_SUBSCRIPTION_LAPTOP: ${{ secrets.PUSH_SUBSCRIPTION_LAPTOP }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          npx tsx scripts/send-push.ts
+          if [ -f dead-subs.txt ]; then
+            echo "dead=$(tr '\n' ' ' < dead-subs.txt)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build site
+        run: node scripts/make-icons.mjs && node scripts/build-site.mjs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: report
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  alarm:
+    needs: report
+    if: needs.report.outputs.deadsubs != ''
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      # A push subscription that expires gives no signal at all on its own - you simply stop
+      # getting notifications and do not notice for weeks. An issue e-mails you instead.
+      - name: Open a re-pairing issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEAD: ${{ needs.report.outputs.deadsubs }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh issue create --repo "$REPO" \
+            --title "Push-abonnement verlopen - opnieuw koppelen" \
+            --body "Deze abonnementen gaven 404/410 terug en zijn vervallen: $DEAD
+
+          Open de tracker, klap **Meldingen op dit apparaat** open, zet meldingen opnieuw aan en
+          plak de nieuwe sleutel in de bijbehorende secret onder Settings -> Secrets and
+          variables -> Actions. Tot dat gebeurt komt er van dat apparaat niets meer binnen."

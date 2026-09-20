@@ -15,7 +15,9 @@
     "run:weekly": "tsx src/cli.ts --report weekly",
     "run:monthly": "tsx src/cli.ts --report monthly",
     "build": "node scripts/make-icons.mjs && node scripts/build-site.mjs",
-    "serve": "node scripts/serve.mjs _site 5173"
+    "serve": "node scripts/serve.mjs _site 5173",
+    "run:push": "tsx scripts/send-push.ts",
+    "verify": "tsx scripts/verify-binance.ts && tsx scripts/verify-universe.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

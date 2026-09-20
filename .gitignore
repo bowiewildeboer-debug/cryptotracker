@@ -5,3 +5,9 @@ node_modules/
 *.log
 web/dist/
 _site/
+
+# Generated fresh on every run and deployed straight to Pages as an artifact.
+# Committing it daily would add ~180 MB of git objects per year for no benefit.
+# Only data/history/ is committed: it is ~11 KB per day and the portfolio replay needs it.
+data/latest.json
+data/reports/

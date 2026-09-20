@@ -21,6 +21,24 @@ export interface PushResult {
 /** Push services reject anything larger; stay well under and fail loudly rather than silently. */
 const MAX_PAYLOAD_BYTES = 3000;
 
+/**
+ * Which extra report became available today.
+ *
+ * The job builds all three every night, but only says so on the day a new one actually
+ * closed - otherwise "weekrapport staat klaar" would appear every single morning and stop
+ * meaning anything.
+ */
+export function periodNote(asOf: string): string {
+  const d = new Date(`${asOf}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  // asOf is the last CLOSED day, so a Sunday close completes the week and a month-end close
+  // completes the month.
+  const isMonthEnd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate() === d.getUTCDate();
+  if (isMonthEnd) return 'Maandrapport staat klaar';
+  if (d.getUTCDay() === 0) return 'Weekrapport staat klaar';
+  return '';
+}
+
 export function buildPayload(report: Report, appUrl: string): string {
   const s = report.sections;
   const top = report.coins
@@ -33,6 +51,8 @@ export function buildPayload(report: Report, appUrl: string): string {
   if (s.droppedOut.length > 0) parts.push(`${s.droppedOut.length} uitgevallen`);
   if (s.preferBtc.length > 0) parts.push(`${s.preferBtc.length}x liever BTC`);
   if (!report.btcInTrend) parts.push('BTC onder zijn Kijun');
+  const note = periodNote(report.asOf);
+  if (note) parts.push(note);
 
   return JSON.stringify({
     // Safari 18.4+ renders this declaratively; every other platform goes through the SW.
