@@ -212,3 +212,25 @@ td.sym .name { display: block; font-weight: 400; font-size: 11px; color: var(--f
 @media (min-width: 861px) {
   .cards { display: none; }
 }
+
+/* ---------- push panel ---------- */
+.push-panel { margin-top: 8px; display: grid; gap: 8px; }
+.push-panel p { margin: 0; }
+.push-status { font-weight: 600; }
+.push-status.ok { color: var(--good); }
+.push-status.todo { color: var(--warn); }
+.push-status.off { color: var(--muted); }
+.push-panel button {
+  justify-self: start;
+  background: var(--accent); color: #fff; border: 0;
+  border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.push-panel button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+.push-panel textarea {
+  width: 100%; min-height: 84px; font-family: var(--mono); font-size: 11px;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px; resize: vertical;
+}
+.push-panel ol { margin: 0; padding-left: 20px; }
+.push-panel li { margin-bottom: 3px; }
+.push-err { color: var(--bad); }

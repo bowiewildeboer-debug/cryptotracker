@@ -1,4 +1,6 @@
+import { writeFileSync } from 'node:fs';
 import { runDaily } from './pipeline.ts';
+import { sendDailyPush } from './notify/push.ts';
 
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -54,6 +56,24 @@ for (const [tf, r] of Object.entries(report.periodic)) {
   console.log(`  in trend: ${r.inTrend.length}   not in trend: ${r.notInTrend.length}`);
   if (r.changes.length === 0) console.log('  no changes versus the previous period');
   for (const ch of r.changes) console.log(`  ${ch.symbol.padEnd(6)} ${ch.what}`);
+}
+
+if (args.includes('--push')) {
+  const push = await sendDailyPush(report);
+  if (push.skipped) {
+    console.log(`
+push overgeslagen: ${push.skipped}`);
+  } else {
+    console.log(`
+push: ${push.sent.length} verstuurd (${push.payloadBytes} bytes)`);
+    for (const f of push.failed) console.log(`  ! ${f.name} mislukt (${f.status ?? '?'}): ${f.error}`);
+    if (push.dead.length > 0) {
+      console.log(`  ! verlopen abonnementen: ${push.dead.join(', ')}`);
+      // The workflow turns this file into a GitHub issue, which GitHub emails - the only
+      // signal that would otherwise exist for a silently expired subscription.
+      writeFileSync('dead-subs.txt', push.dead.join('\n'));
+    }
+  }
 }
 
 if (report.portfolio) {

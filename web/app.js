@@ -11,6 +11,8 @@
  * notification can mention them, and the app offers the JSON to paste there.
  */
 
+import { pushSupported, enablePush, subscriptionDrift, currentSubscription, markPasted, unsubscribe } from './push.js';
+
 const DATA_URL = './data/latest.json';
 const HOLDINGS_KEY = 'cryptotracker.holdings.v1';
 const TAB_KEY = 'cryptotracker.tab.v1';
@@ -576,6 +578,112 @@ function showDetail(coin) {
   dlg.showModal();
 }
 
+/* ------------------------------------------------------------------ meldingen */
+
+const PUSH_TEXT = {
+  none: ['off', 'Meldingen staan uit op dit apparaat.'],
+  'not-pasted': ['todo', 'Je bent geabonneerd, maar de sleutel staat nog niet in GitHub — zonder die stap wordt er niets verstuurd.'],
+  changed: ['todo', 'Je abonnement is vernieuwd door de browser. Zet de nieuwe sleutel in GitHub, anders komen er geen meldingen meer aan.'],
+  gone: ['off', 'Het abonnement is verdwenen — meestal doordat de app van het beginscherm is gehaald of de sitegegevens zijn gewist.'],
+  ok: ['ok', 'Meldingen staan aan en de sleutel is doorgegeven.'],
+};
+
+async function renderPush() {
+  const panel = document.getElementById('push-panel');
+  if (!panel) return;
+  panel.replaceChildren();
+
+  if (!pushSupported()) {
+    panel.append(
+      el('p', 'push-status off', 'Deze browser kan geen meldingen tonen.'),
+      el('p', null, 'Op een iPhone moet je de app eerst via Deel → Zet op beginscherm installeren en daarna vanaf dat icoon openen. Op Android en Windows werkt het direct in Chrome of Edge.'),
+    );
+    return;
+  }
+
+  const state = await subscriptionDrift();
+  const [tone, message] = PUSH_TEXT[state] ?? PUSH_TEXT.none;
+  panel.append(el('p', `push-status ${tone}`, message));
+
+  const showKey = async () => {
+    const sub = await currentSubscription();
+    if (!sub) return;
+    const json = JSON.stringify(sub.toJSON());
+
+    const steps = el('ol');
+    for (const step of [
+      'Kopieer de sleutel hieronder.',
+      'Ga in GitHub naar Settings → Secrets and variables → Actions.',
+      'Maak of bewerk de secret PUSH_SUBSCRIPTION_PHONE (of ...LAPTOP) en plak hem daar.',
+    ]) steps.append(el('li', null, step));
+    panel.append(steps);
+
+    const ta = el('textarea');
+    ta.readOnly = true;
+    ta.value = json;
+    ta.addEventListener('focus', () => ta.select());
+    panel.append(ta);
+
+    const copy = el('button', null, 'Kopieer sleutel');
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(json);
+        copy.textContent = 'Gekopieerd ✓';
+      } catch {
+        ta.select();
+        copy.textContent = 'Selecteer en kopieer handmatig';
+      }
+    });
+
+    const done = el('button', 'secondary', 'Ik heb hem in GitHub gezet');
+    done.addEventListener('click', () => {
+      markPasted(json);
+      renderPush();
+    });
+
+    const row = el('p');
+    row.append(copy, document.createTextNode(' '), done);
+    panel.append(row);
+  };
+
+  if (state === 'ok') {
+    const again = el('button', 'secondary', 'Sleutel opnieuw tonen');
+    again.addEventListener('click', () => {
+      again.remove();
+      showKey();
+    });
+    const off = el('button', 'secondary', 'Meldingen uitzetten');
+    off.addEventListener('click', async () => {
+      await unsubscribe();
+      renderPush();
+    });
+    const row = el('p');
+    row.append(again, document.createTextNode(' '), off);
+    panel.append(row);
+    return;
+  }
+
+  if (state === 'not-pasted' || state === 'changed') {
+    await showKey();
+    return;
+  }
+
+  const btn = el('button', null, 'Meldingen aanzetten');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      // requestPermission has to happen inside this click, not on page load.
+      await enablePush();
+      await renderPush();
+    } catch (err) {
+      btn.disabled = false;
+      panel.append(el('p', 'push-err', err.message ?? String(err)));
+    }
+  });
+  panel.append(btn);
+  panel.append(el('p', null, 'Je krijgt dan elke ochtend een korte samenvatting met een link naar dit overzicht.'));
+}
+
 /* ------------------------------------------------------------------ main */
 
 function render() {
@@ -644,6 +752,9 @@ try {
 }
 
 load().catch(showError);
+renderPush().catch(() => {
+  /* the panel is a convenience; never let it break the report */
+});
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {
