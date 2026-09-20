@@ -6,13 +6,13 @@
     "kijunAux": 55,
     "senkouB": 55,
     "displacement": 35,
-    "extraBars": 1,
-    "$shiftNote": "Plotted shift = displacement - extraBars = 34. Verified against the script's Pine source; matches TradingView's own off-by-one.",
+    "extraBars": 0,
+    "$shiftNote": "Plotted shift = displacement - extraBars = 35. RESOLVED 2026-09-20 from Bowie's own chart: on 20 Sep the cloud extends to 25 Oct, which is exactly 35 bars forward, so his 'Displacement: additional bars' is 0. A shift of 34 would end the cloud on 24 Oct.",
     "senkouASource": "tenkan+kijun",
     "$senkouASourceNote": "RESOLVED 2026-09-20 from the Pine source: leadingSpanA = avg(conversion, baseline) = (tenkan + kijun) / 2. The auxiliary base line is plot-only and feeds no formula.",
     "cloudMode": "displaced",
     "$cloudModeOptions": ["displaced", "noOffset"],
-    "$cloudModeNote": "OPEN POINT E - the script draws BOTH a standard displaced cloud and a 'no offset' cloud. 'displaced' = classic Ichimoku, cloud at bar t comes from senkou[t-34]. 'noOffset' = cloud at bar t comes from senkou[t]. Both are computed; this selects which one drives the table and the score."
+    "$cloudModeNote": "RESOLVED 2026-09-20: Bowie reads the traditional displaced cloud, projected forward. Cloud at bar t comes from senkou[t-35]. The no-offset variant is still computed and kept in the output, but does not drive the table or the score."
   },
   "ema": {
     "periods": [21, 55, 100],
@@ -51,8 +51,8 @@
       "topMinWeight": 0.5,
       "altMaxWeight": 0.05,
       "$weightNote": "Top-10 coins share at least 50% (up to 100%) pro rata by market cap. Coins ranked 11+ are split evenly at no more than 5% each, so they never exceed 50% in total. Whatever cannot be allocated stays in stablecoins - up to 100% when nothing qualifies.",
-      "altcoinGate": { "line": "tenkan", "series": "coinBtc" },
-      "$altcoinGateNote": "An altcoin must be above its daily Kijun in USD AND above the Tenkan-13 of its {coin}/BTC series. Deliberately faster than the report's preferBtc flag, which stays on the Kijun.",
+      "altcoinGate": { "line": "kijun", "series": "coinBtc" },
+      "$altcoinGateNote": "RESOLVED 2026-09-20: Kijun, not Tenkan. An altcoin must be above its daily Kijun-35 in USD AND above the Kijun-35 of its {coin}/BTC series. Same line as the report's preferBtc flag, so table and portfolio never disagree.",
       "rebalance": { "onSetChange": true, "weekly": true }
     }
   },

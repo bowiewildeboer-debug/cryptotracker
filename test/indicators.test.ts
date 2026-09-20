@@ -13,7 +13,7 @@ const BOWIE: IchimokuParams = {
   kijunAux: 55,
   senkouB: 55,
   displacement: 35,
-  extraBars: 1,
+  extraBars: 0,
   senkouASource: 'tenkan+kijun',
   cloudMode: 'displaced',
 };
@@ -169,9 +169,10 @@ describe('ichimoku', () => {
   const bars = dailySeries(MON, rows);
   const ich = ichimoku(bars, BOWIE);
 
-  it('uses shift = displacement - extraBars, which is 34 for Bowie and not 35', () => {
-    expect(ich.shift).toBe(34);
-    expect(ichimoku(bars, { ...BOWIE, extraBars: 0 }).shift).toBe(35);
+  it('uses shift = displacement - extraBars, which is 35 for Bowie', () => {
+    // Derived from his chart: on 20 Sep the cloud reaches 25 Oct, exactly 35 bars forward.
+    expect(ich.shift).toBe(35);
+    expect(ichimoku(bars, { ...BOWIE, extraBars: 1 }).shift).toBe(34);
   });
 
   it('computes Senkou Span A from Tenkan and the PRIMARY Kijun, never the auxiliary', () => {
@@ -184,8 +185,8 @@ describe('ichimoku', () => {
 
   it('aligns the displaced cloud to the spans computed `shift` bars earlier', () => {
     for (const t of [200, 300, 399]) {
-      const a = ich.senkouARaw[t - 34] as number;
-      const b = ich.senkouBRaw[t - 34] as number;
+      const a = ich.senkouARaw[t - 35] as number;
+      const b = ich.senkouBRaw[t - 35] as number;
       expect(ich.cloudTopDisplaced[t]).toBe(Math.max(a, b));
       expect(ich.cloudBottomDisplaced[t]).toBe(Math.min(a, b));
     }
@@ -208,13 +209,13 @@ describe('ichimoku', () => {
   });
 
   it('keeps the cloud undefined until enough history exists', () => {
-    // senkouB needs 55 bars (first value at index 54), displaced by 34 -> index 88.
-    expect(ich.cloudTopDisplaced[87]).toBeNull();
-    expect(ich.cloudTopDisplaced[88]).not.toBeNull();
+    // senkouB needs 55 bars (first value at index 54), displaced by 35 -> index 89.
+    expect(ich.cloudTopDisplaced[88]).toBeNull();
+    expect(ich.cloudTopDisplaced[89]).not.toBeNull();
   });
 
   it('lags the chikou span backwards by the same shift', () => {
-    expect(ich.chikou[100]).toBe(bars[134]?.close);
+    expect(ich.chikou[100]).toBe(bars[135]?.close);
     expect(ich.chikou[bars.length - 1]).toBeNull();
   });
 
@@ -223,7 +224,7 @@ describe('ichimoku', () => {
     expect(positionVsCloud(6, 8, 5)).toBe('in');
     expect(positionVsCloud(4, 8, 5)).toBe('below');
     expect(positionVsCloud(4, null, 5)).toBe('unknown');
-    for (let t = 88; t < bars.length; t++) {
+    for (let t = 89; t < bars.length; t++) {
       expect(ich.cloudTopDisplaced[t] as number).toBeGreaterThanOrEqual(ich.cloudBottomDisplaced[t] as number);
     }
   });
@@ -237,10 +238,10 @@ describe('cloudStateAt', () => {
   /**
    * A 120-bar base series whose cloud at the final bars has real thickness.
    *
-   * The cloud at index 119 is built from the spans at index 85, so the windows that matter
-   * are 73..85 (tenkan), 51..85 (kijun) and 31..85 (senkou B). A single deep low at index 40
+   * The cloud at index 119 is built from the spans at index 84, so the windows that matter
+   * are 72..84 (tenkan), 50..84 (kijun) and 30..84 (senkou B). A single deep low at index 40
    * falls inside the 55-window but outside the 35-window, which pulls Span B below Span A and
-   * gives the cloud thickness. Bars 118 and 119 are past index 85, so rewriting them cannot
+   * gives the cloud thickness. Bars 118 and 119 are past index 84, so rewriting them cannot
    * move the cloud - which is what lets the tests place a touch deliberately.
    */
   function baseSeries(): Ohlc[] {

@@ -66,7 +66,7 @@ by user **KryptoNight** — identified from a verbatim match of all five input l
 | Base Line Period – Kijun-Sen (auxiliary) | 55 | `ichimoku.kijunAux` |
 | Lagging Span 2 Periods – Senkou Span B | 55 | `ichimoku.senkouB` |
 | Displacement: (-) Chikou Span; (+) Senkou Span A | 35 | `ichimoku.displacement` |
-| Displacement: additional bars | 1 *(assumed default)* | `ichimoku.extraBars` |
+| Displacement: additional bars | **0** *(derived from his chart, see below)* | `ichimoku.extraBars` |
 
 **The auxiliary base line feeds nothing.** In the Pine source `baselineA` is assigned
 `donchian(55)` and then passed to two `plot()` calls only — it appears in no `fill()`, in no
@@ -78,10 +78,15 @@ fields, preserving exactly that relationship.
 → It is computed and exposed as an optional extra level, but it never affects the cloud or the
 score. `ichimoku.senkouASource` remains configurable for safety, resolved to `"tenkan+kijun"`.
 
-> **OPEN POINT E** — that script renders **two** clouds: the standard displaced one and a
-> "no offset" one. "Price is in the cloud" means different things in the two modes.
-> `ichimoku.cloudMode` selects which drives the table; both are always computed, and the
-> chosen mode is printed in every report footer. Default `"displaced"` (classic Ichimoku).
+**The shift is 35, not 34** — resolved empirically from Bowie's own chart. He reports that on
+20 September the cloud extends to 25 October, which is exactly 35 calendar days (and crypto
+trades every day, so bars equal days). A shift of 34 would end the cloud on 24 October.
+So `extraBars = 0` in his settings, and `SHIFT = displacement - extraBars = 35`.
+
+He reads the **traditional displaced cloud**, projected forward — `cloudMode = "displaced"`.
+The no-offset variant is still computed and kept in the output for reference, but it drives
+neither the table nor the score. Chunk 9 confirms the shift numerically against a concrete
+cloud value read off his chart.
 
 EMAs: periods **21, 55, 100**, on close.
 
@@ -196,8 +201,8 @@ senkouB[t]  = donchian(55, t)                      // raw, undisplaced
 senkouA[t]  = (tenkan[t] + kijun[t]) / 2           // raw, undisplaced — per senkouASource
 
 D     = 35                     // the "Displacement: (-) Chikou; (+) Senkou A" input
-E     = 1                      // the "Displacement: additional bars" input
-SHIFT = D - E = 34             // ← the script plots spans at offset = displacement - extraBars
+E     = 0                      // the "Displacement: additional bars" input, per his chart
+SHIFT = D - E = 35             // ← the script plots spans at offset = displacement - extraBars
 
 // cloudMode = "displaced"  (default, classic Ichimoku)
 cloudTop(t)    = max( senkouA[t-SHIFT], senkouB[t-SHIFT] )
@@ -510,11 +515,11 @@ Buy once, never touch again.
 | Asset | Qualifies when |
 |---|---|
 | BTC | `close_BTC(t) > kijunDaily_BTC(t)` |
-| any altcoin `X` | `close_X(t) > kijunDaily_X(t)` **and** `close_X/BTC(t) > tenkanDaily_X/BTC(t)` |
+| any altcoin `X` | `close_X(t) > kijunDaily_X(t)` **and** `close_X/BTC(t) > kijunDaily_X/BTC(t)` |
 
-The altcoin gate uses the **Tenkan-sen (13)** of the `{coin}/BTC` series — the synthetic ratio
-of §4.4 — not the Kijun. This is deliberately faster than the `preferBtc` report flag (§7),
-which stays on the Kijun. Report = conservative signal; portfolio = tactical rotation.
+The altcoin gate uses the **Kijun-sen (35)** of the `{coin}/BTC` series — the synthetic ratio
+of §4.4 — the same line as the `preferBtc` report flag (§7), so the table and the portfolio
+can never disagree about whether a coin is beating BTC.
 
 #### Target weights
 
