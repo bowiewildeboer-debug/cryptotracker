@@ -77,8 +77,8 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | 2 | Indicator-engine + tests | ✅ klaar | `src/indicators/*`, `src/data/aggregate.ts` — 41 tests groen |
 | 2b | Portefeuille-simulatie + tests | ✅ klaar | `src/analysis/portfolio.ts` — 22 tests groen |
 | 3 | Datalaag: coinlijst, symbol-mapping, klines | ✅ klaar | `src/data/*` — live geverifieerd tegen Binance en CoinGecko |
-| 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | 🟡 volgende | `src/analysis/*`, `data/latest.json` |
-| 5 | Rapportgeneratie (dag/week/maand) | ⬜ open | `src/report/*` |
+| 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | ✅ klaar | `src/analysis/signals.ts`, `src/pipeline.ts`, `data/latest.json` |
+| 5 | Rapportgeneratie (week/maand-varianten) | 🟡 volgende | `src/report/*` |
 | 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ⬜ open | `web/` |
 | 7 | Web Push notificaties | ⬜ open | `src/notify/*`, service worker |
 | 8 | GitHub Actions: cron + deploy | ⬜ open | `.github/workflows/*` |
@@ -108,19 +108,19 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | E | Lees je de **verschoven** cloud of de **no-offset** cloud van dat script? | Chunk 4 (weergave) | ❓ vraag aan Bowie — beide worden berekend, `cloudMode` schakelt |
 | F | Staat "Displacement: additional bars" bij jou op 1? | Chunk 2 | ❓ vraag aan Bowie — bepaalt of de shift 34 of iets anders is |
 | G | Kijun of Tenkan voor het BTC-paar | — | ✅ **Kijun**, overal |
-| H | 14 échte top-100-munten staan niet op Binance (HYPE #10, XMR #12, CRO, KAS, PI, FLR…). Fallback-beurs bijbouwen? | Chunk 3b | ❓ vraag aan Bowie |
-| I | Gratis CoinGecko demo-key aanmaken? Keyless werkt, maar een run duurde 63s i.p.v. 4s | Chunk 8 | ❓ aanrader, 2 min werk |
+| H | 15 échte top-100-munten staan niet op Binance (HYPE #10, XMR #12, CRO, KAS, PI, FLR…) | — | ✅ **akkoord** — zo laten, wordt in het rapport getoond |
+| I | CoinGecko demo-key | — | ✅ **geregeld**, staat in `.env` (gitignored) → run ging van 63s naar 3s |
+| J | `data/latest.json` is ~380 KB per dag; dagelijks committen = ~140 MB/jaar | Chunk 8 | ⚠️ oplossen met een roulerend venster van 120 dagen |
 
 ---
 
 ## 7. Werk in uitvoering
 
-_Chunk 4_ — analyse. Contract: `docs/SPEC.md` §§5–8. De datalaag levert alles aan:
-`buildUniverse()`, `fetchDailyCandlesMany()`, `aggregate()`, `syntheticBtcRatio()`.
+_Chunk 5_ — week- en maandrapport. Contract: `docs/SPEC.md` §8.5. De dagelijkse variant
+draait al volledig (`npx tsx src/cli.ts`); week en maand gebruiken dezelfde motor met een
+andere referentiecandle. Niets half-af achtergelaten.
 
-Te bouwen: per munt de volledige signaaltabel (Kijun D/W, cloud D/W, 6 EMA-cellen, touches,
-cross-timeframe touches via `higherTimeframeAsOf`), de `preferBtc`-filter, de dag-diff en de
-score uit §8.4. Niets half-af achtergelaten.
+**Draaien:** `npx tsx src/cli.ts` (volledig, ~15s) of `--limit 20 --dry-run` voor snel testen.
 
 **Verificatiescripts** (draaien tegen de echte API, geen mocks):
 `npx tsx scripts/verify-binance.ts` en `npx tsx scripts/verify-universe.ts`.
@@ -154,3 +154,11 @@ score uit §8.4. Niets half-af achtergelaten.
   · de prijscontrole ving een echte ticker-botsing: CoinGecko's `AI` (Artificial Inu) is een
     **andere munt** dan Binance's `AIUSDT` — bij een simpele ticker-match was dit stilzwijgend
     de verkeerde grafiek geworden.
+- **2026-09-20 s1** — Chunk 4 af. Volledige pijplijn draait op echte data: 100 munten in ~15s
+  (universe 2,7s · candles 12,3s · analyse 0,2s). Eerste echte uitkomst: 60 koopkandidaten,
+  23× "liever BTC", 2 uitgevallen, BTC zelf boven zijn daily Kijun.
+  Twee bugs gevonden en gefixt door het écht te draaien: BTC kreeg het label "liever BTC"
+  (BTC/BTC is per definitie 1,0 en valt dus op "gelijk aan de Kijun"), en de scoreonderdelen
+  telden door afronding op tot 99,98 in plaats van 100.
+  Portefeuillestart gezet op **2026-09-19**: de laatste gesloten dagcandle op de dag dat Bowie
+  "vandaag" zei. Anders blijft de simulatie tot de volgende run leeg.

@@ -227,6 +227,10 @@ function rebalance(
     book.cashUsd -= notional + fee;
     trades.push({ date, portfolio, id, symbol: symbolOf.get(id) ?? id, side: 'buy', notionalUsd: notional, feeUsd: fee, reason });
   }
+
+  // Floating-point residue from scaling the buys can leave a fraction of a cent, sometimes
+  // negative. Reporting "-0% cash" for a fully invested book is just noise.
+  if (Math.abs(book.cashUsd) < 0.01) book.cashUsd = 0;
 }
 
 function statsOf(values: number[]): Omit<PortfolioStats, 'totalFeesUsd'> {

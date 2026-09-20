@@ -41,7 +41,8 @@
   },
   "portfolio": {
     "$comment": "Two simulated portfolios. Informational only - nothing is ever traded. See docs/SPEC.md section 11.",
-    "startDate": "2026-09-20",
+    "startDate": "2026-09-19",
+    "$startDateNote": "Bowie starts \"today\", 2026-09-20. The simulated purchase happens at the last CLOSED daily close available on that day, which is 2026-09-19 - candles close at 00:00 UTC, so 20 September has not closed yet. Using 2026-09-20 here would leave the portfolio empty until the next run.",
     "startCapitalEur": 10000,
     "feeRate": 0.0015,
     "minTradeUsd": 1,

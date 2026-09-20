@@ -485,6 +485,7 @@ informational simulations.
 | Transaction fee | **0.15%** of the absolute notional traded, on both buys and sells |
 | Cash | held as a **USD stablecoin** — it therefore carries EUR/USD exchange-rate exposure, which is shown separately |
 | Start | €10 000 converted to USD at the `EURUSDT` close of the start date |
+| Start date | `2026-09-19` - the last daily close available on the day Bowie said "today" (2026-09-20). Daily candles close at 00:00 UTC, so 20 September has not closed yet |
 
 **The portfolio state is derived, never incrementally mutated.** Every run replays the whole
 history from the start date out of the committed daily universe snapshots plus candle data.
