@@ -4,14 +4,18 @@
   "private": true,
   "type": "module",
   "description": "Personal crypto trend watcher: custom Ichimoku (Kijun 35) + EMA 21/55/100 over the CMC top 100",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "run:daily": "tsx src/cli.ts --report daily",
     "run:weekly": "tsx src/cli.ts --report weekly",
-    "run:monthly": "tsx src/cli.ts --report monthly"
+    "run:monthly": "tsx src/cli.ts --report monthly",
+    "build": "node scripts/make-icons.mjs && node scripts/build-site.mjs",
+    "serve": "node scripts/serve.mjs _site 5173"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

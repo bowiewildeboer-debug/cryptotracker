@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cryptotracker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve.mjs", "_site", "5173"],
+      "port": 5173
+    }
+  ]
+}

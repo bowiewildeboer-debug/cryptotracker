@@ -78,9 +78,9 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | 2b | Portefeuille-simulatie + tests | ✅ klaar | `src/analysis/portfolio.ts` — 22 tests groen |
 | 3 | Datalaag: coinlijst, symbol-mapping, klines | ✅ klaar | `src/data/*` — live geverifieerd tegen Binance en CoinGecko |
 | 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | ✅ klaar | `src/analysis/signals.ts`, `src/pipeline.ts`, `data/latest.json` |
-| 5 | Rapportgeneratie (week/maand-varianten) | 🟡 volgende | `src/report/*` |
-| 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ⬜ open | `web/` |
-| 7 | Web Push notificaties | ⬜ open | `src/notify/*`, service worker |
+| 5 | Rapportgeneratie (week/maand-varianten) | ✅ klaar | `src/report/periodic.ts` |
+| 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ✅ klaar | `web/` — getest in de browser, mobiel en desktop |
+| 7 | Web Push notificaties | 🟡 volgende | `src/notify/*` (service worker staat al klaar) |
 | 8 | GitHub Actions: cron + deploy | ⬜ open | `.github/workflows/*` |
 | 9 | Validatie tegen jouw TradingView-chart | ⬜ open | Handmatige check van 5 munten |
 
@@ -116,11 +116,17 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 
 ## 7. Werk in uitvoering
 
-_Chunk 5_ — week- en maandrapport. Contract: `docs/SPEC.md` §8.5. De dagelijkse variant
-draait al volledig (`npx tsx src/cli.ts`); week en maand gebruiken dezelfde motor met een
-andere referentiecandle. Niets half-af achtergelaten.
+_Chunk 7_ — web push. Contract: `docs/SPEC.md` §10, mechaniek in `docs/RESEARCH.md` §7.
+De service worker (`web/sw.js`) heeft de `push`- en `notificationclick`-handlers al.
+Te bouwen: VAPID-sleutels genereren, een knop in de app om te abonneren + het abonnement
+tonen om te plakken, en `src/notify/push.ts` dat vanuit Actions verstuurt.
+Niets half-af achtergelaten.
 
-**Draaien:** `npx tsx src/cli.ts` (volledig, ~15s) of `--limit 20 --dry-run` voor snel testen.
+**Draaien:**
+- `npx tsx src/cli.ts` — volledige run (~15s), schrijft `data/`
+- `npx tsx src/cli.ts --report all` — plus week- en maandrapport
+- `npx tsx src/cli.ts --limit 20 --dry-run` — snel testen zonder wegschrijven
+- `npm run build && npm run serve` — app op http://localhost:5173
 
 **Verificatiescripts** (draaien tegen de echte API, geen mocks):
 `npx tsx scripts/verify-binance.ts` en `npx tsx scripts/verify-universe.ts`.
@@ -162,3 +168,13 @@ andere referentiecandle. Niets half-af achtergelaten.
   telden door afronding op tot 99,98 in plaats van 100.
   Portefeuillestart gezet op **2026-09-19**: de laatste gesloten dagcandle op de dag dat Bowie
   "vandaag" zei. Anders blijft de simulatie tot de volgende run leeg.
+- **2026-09-20 s1** — Chunk 5 af (week/maand). Daarbij een te strenge eigen regel weggehaald:
+  EMA-cellen werden alleen geteld als de EMA volledig geconvergeerd was, bovenop een
+  vergelijking die de onzekerheid al meerekende. Beoordeelde maandsignalen gingen van 8 naar
+  20 van de 25.
+- **2026-09-20 s1** — Chunk 6 af: de app draait, in de browser getest op desktop én mobiel.
+  Drie dingen gevonden door te kijken in plaats van te vertrouwen: de service worker serveerde
+  een oude `app.js` uit cache (nu network-first, anders zie jij na een update dagen de oude
+  versie), het verschil tussen beide portefeuilles toonde "+€ -0,00" door negatieve nul, en de
+  grafiek zette bij één meetpunt twee stippen op verschillende hoogtes terwijl de bedragen
+  tot op de cent gelijk waren.

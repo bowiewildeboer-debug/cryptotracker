@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cryptotracker</title>
+<meta name="description" content="Trendoverzicht van de top 100 op Ichimoku en EMA">
+<meta name="theme-color" content="#0b0e14">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <h1>Cryptotracker</h1>
+    <button id="refresh" class="icon-btn" title="Opnieuw laden" aria-label="Opnieuw laden">&#x21bb;</button>
+  </div>
+  <div id="freshness" class="freshness" role="status">Laden&hellip;</div>
+  <div id="btc-line" class="btc-line"></div>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist"></nav>
+
+<main id="main">
+  <div id="empty" class="empty">Even geduld, de gegevens worden opgehaald&hellip;</div>
+</main>
+
+<dialog id="detail" class="detail">
+  <div class="detail-head">
+    <h2 id="detail-title"></h2>
+    <button id="detail-close" class="icon-btn" aria-label="Sluiten">&times;</button>
+  </div>
+  <div id="detail-body"></div>
+</dialog>
+
+<footer class="foot">
+  <div id="params" class="params"></div>
+  <details id="warnings-box" class="warnings" hidden>
+    <summary>Aandachtspunten van deze run (<span id="warn-count">0</span>)</summary>
+    <ul id="warnings"></ul>
+  </details>
+  <p class="disclaimer">
+    Dit is een persoonlijk hulpmiddel, geen financieel advies. De portefeuilles zijn simulaties;
+    er wordt nooit iets verhandeld.
+  </p>
+</footer>
+
+<script src="./app.js" type="module"></script>
+</body>
+</html>
