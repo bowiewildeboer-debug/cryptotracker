@@ -76,8 +76,8 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | 1 | Repo-skelet, specs, config | ✅ klaar | `docs/SPEC.md`, `config/`, `package.json` |
 | 2 | Indicator-engine + tests | ✅ klaar | `src/indicators/*`, `src/data/aggregate.ts` — 41 tests groen |
 | 2b | Portefeuille-simulatie + tests | ✅ klaar | `src/analysis/portfolio.ts` — 22 tests groen |
-| 3 | Datalaag: coinlijst, symbol-mapping, klines, cache | 🟡 volgende | `src/data/*`, lokale cache met echte candles |
-| 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | ⬜ open | `src/analysis/*`, `data/latest.json` |
+| 3 | Datalaag: coinlijst, symbol-mapping, klines | ✅ klaar | `src/data/*` — live geverifieerd tegen Binance en CoinGecko |
+| 4 | Analyse: signaal-tabel + BTC-filter + dag-diff | 🟡 volgende | `src/analysis/*`, `data/latest.json` |
 | 5 | Rapportgeneratie (dag/week/maand) | ⬜ open | `src/report/*` |
 | 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ⬜ open | `web/` |
 | 7 | Web Push notificaties | ⬜ open | `src/notify/*`, service worker |
@@ -107,18 +107,23 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | D | iPhone of Android? | Chunk 7 | ❓ vraag aan Bowie |
 | E | Lees je de **verschoven** cloud of de **no-offset** cloud van dat script? | Chunk 4 (weergave) | ❓ vraag aan Bowie — beide worden berekend, `cloudMode` schakelt |
 | F | Staat "Displacement: additional bars" bij jou op 1? | Chunk 2 | ❓ vraag aan Bowie — bepaalt of de shift 34 of iets anders is |
-| G | Rapport gebruikt de **Kijun** van het BTC-paar, portefeuille de **Tenkan**. Bewust? | Chunk 4 | ❓ vraag aan Bowie — beide zijn gebouwd zoals opgegeven |
+| G | Kijun of Tenkan voor het BTC-paar | — | ✅ **Kijun**, overal |
+| H | 14 échte top-100-munten staan niet op Binance (HYPE #10, XMR #12, CRO, KAS, PI, FLR…). Fallback-beurs bijbouwen? | Chunk 3b | ❓ vraag aan Bowie |
+| I | Gratis CoinGecko demo-key aanmaken? Keyless werkt, maar een run duurde 63s i.p.v. 4s | Chunk 8 | ❓ aanrader, 2 min werk |
 
 ---
 
 ## 7. Werk in uitvoering
 
-_Chunk 3_ — datalaag. Contract: `docs/SPEC.md` §§2, 4. Geverifieerde endpoints en valkuilen
-staan in `docs/RESEARCH.md` §§1–3 — niet opnieuw opzoeken.
+_Chunk 4_ — analyse. Contract: `docs/SPEC.md` §§5–8. De datalaag levert alles aan:
+`buildUniverse()`, `fetchDailyCandlesMany()`, `aggregate()`, `syntheticBtcRatio()`.
 
-Te bouwen: CoinGecko-ranglijst + stablecoinfilter, symbol-resolutie via coin-id (nooit op
-ticker matchen), Binance kline-fetcher met rate-limit-backoff, `EURUSDT` voor de euro-koers,
-en de synthetische `{coin}/BTC`-reeks. Niets half-af achtergelaten.
+Te bouwen: per munt de volledige signaaltabel (Kijun D/W, cloud D/W, 6 EMA-cellen, touches,
+cross-timeframe touches via `higherTimeframeAsOf`), de `preferBtc`-filter, de dag-diff en de
+score uit §8.4. Niets half-af achtergelaten.
+
+**Verificatiescripts** (draaien tegen de echte API, geen mocks):
+`npx tsx scripts/verify-binance.ts` en `npx tsx scripts/verify-universe.ts`.
 
 ---
 
@@ -138,3 +143,14 @@ en de synthetische `{coin}/BTC`-reeks. Niets half-af achtergelaten.
   2026-09-20). Verdeelregel vastgelegd in `docs/SPEC.md` §11. Chunk 2b af, 22 tests groen.
   Belangrijk gevolg van de regel: kwalificeert er géén top-10-munt, dan staat minstens de
   helft van de portefeuille in stablecoins — dat volgt rechtstreeks uit de 5%-cap.
+- **2026-09-20 s1** — Open punten E/F/G beantwoord. Cloudverschuiving is **35** bars (uit
+  Bowie's eigen chart: 20 sep → 25 okt), traditionele verschoven cloud, en de BTC-poort van de
+  portefeuille gebruikt de Kijun net als het rapport.
+- **2026-09-20 s1** — Chunk 3 af en **live geverifieerd**, geen mocks:
+  · 170 week- en 38 maandcandles exact gelijk aan Binance's eigen `1w`/`1M` → het ontwerp
+    "alleen daily ophalen" is bewezen;
+  · paginering voorbij de 1000-grens werkt, 1368 symbolen, slechts **38 BTC-paren**;
+  · EURUSDT bestaat (1,1549), dus euro-waardering kan;
+  · de prijscontrole ving een echte ticker-botsing: CoinGecko's `AI` (Artificial Inu) is een
+    **andere munt** dan Binance's `AIUSDT` — bij een simpele ticker-match was dit stilzwijgend
+    de verkeerde grafiek geworden.
