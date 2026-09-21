@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { loadEnv, loadParams, loadExclusions, loadHoldings, type Params } from './config.ts';
 import { buildUniverse, type Universe } from './data/universe.ts';
 import { fetchDailyCandles, fetchDailyCandlesMany } from './data/binance.ts';
-import { analyseCoin, referenceIndex, type CoinSignals, type MarketContext } from './analysis/signals.ts';
+import { analyseCoin, referenceIndex, type Bucket, type CoinSignals, type MarketContext } from './analysis/signals.ts';
 import { simulate, type DayInput, type PortfolioResult, type UniverseCoin } from './analysis/portfolio.ts';
 import { buildPeriodicReport, type PeriodicReport, type PeriodTimeframe } from './report/periodic.ts';
 import { compare } from './indicators/predicates.ts';
@@ -14,9 +14,12 @@ export const DATA_DIR = 'data';
 const HISTORY_DIR = join(DATA_DIR, 'history');
 
 export interface Sections {
+  buitenkans: string[];
+  winstPakken: string[];
+  verkopen: string[];
+  houden: string[];
+  /** Everything above the daily Kijun of the primary series and not already owned. */
   buyCandidates: string[];
-  preferBtc: string[];
-  droppedOut: string[];
   owned: string[];
 }
 
@@ -24,7 +27,8 @@ export interface Report {
   generatedAt: string;
   asOf: string;
   /** The full parameter set that produced this file, so an old report stays interpretable. */
-  params: Params['ichimoku'] & { emaUsage: Params['ema']['usage'] };
+  params: Params['ichimoku'] & { emaUsage: Params['ema']['usage']; levels: Params['levels'] };
+  /** BTC above its own daily Kijun-sen. Decides the whole app's frame of reference. */
   btcInTrend: boolean;
   coins: CoinSignals[];
   sections: Sections;
@@ -36,18 +40,24 @@ export interface Report {
 
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
+const BUCKET_SECTION: Record<Bucket, keyof Sections> = {
+  buitenkans: 'buitenkans',
+  'winst-pakken': 'winstPakken',
+  verkopen: 'verkopen',
+  houden: 'houden',
+};
+
 /**
- * Splits the analysed coins into the four sections of the daily report.
+ * Groups the analysed coins by bucket, for the notification and the CLI summary.
  *
- * A coin appears once, in the first section it qualifies for: a dropout or a holding is more
- * important to see than another name on the buy list.
+ * Unlike the old sections these do NOT compete: every coin sits in exactly one bucket by
+ * construction, while `buyCandidates` and `owned` are separate cross-cutting lists.
  */
 export function assignSections(coins: readonly CoinSignals[]): Sections {
-  const sections: Sections = { buyCandidates: [], preferBtc: [], droppedOut: [], owned: [] };
+  const sections: Sections = { buitenkans: [], winstPakken: [], verkopen: [], houden: [], buyCandidates: [], owned: [] };
   for (const c of coins) {
-    if (c.droppedOutToday) sections.droppedOut.push(c.symbol);
-    else if (c.owned) sections.owned.push(c.symbol);
-    else if (c.inTrend && c.btc.preferBtc === true) sections.preferBtc.push(c.symbol);
+    sections[BUCKET_SECTION[c.bucket]].push(c.symbol);
+    if (c.owned) sections.owned.push(c.symbol);
     else if (c.inTrend) sections.buyCandidates.push(c.symbol);
   }
   return sections;
@@ -55,7 +65,9 @@ export function assignSections(coins: readonly CoinSignals[]): Sections {
 
 /** The strategy portfolio's gate: above the daily Kijun in USD, and beating BTC. */
 export function qualifiesForStrategy(c: CoinSignals, btcSymbol: string): boolean {
-  if (!c.inTrend) return false;
+  // Deliberately the USD Kijun, not the primary one: the simulation buys with euros, and its
+  // gate must not silently change meaning on the day BTC crosses its own Kijun.
+  if (!c.usd.inTrend) return false;
   if (c.symbol === btcSymbol) return true;
   return c.btc.coinBtcInTrend === true;
 }
@@ -151,7 +163,7 @@ export async function runDaily(opts: RunOptions = {}): Promise<Report> {
   const report: Report = {
     generatedAt: new Date().toISOString(),
     asOf,
-    params: { ...params.ichimoku, emaUsage: params.ema.usage },
+    params: { ...params.ichimoku, emaUsage: params.ema.usage, levels: params.levels },
     btcInTrend,
     coins: analysed,
     sections: assignSections(analysed),

@@ -5,6 +5,11 @@
  * as-is, which keeps deployment to "copy the folder". It reads one JSON file produced by the
  * nightly job and renders it.
  *
+ * The report carries TWO complete indicator sets per coin: one on the USD candles (`usd`) and
+ * one on the synthetic {coin}/BTC candles (`btcPair`). Which one leads is decided by BTC
+ * itself and travels in `primaryBase`; the base switch in the tab bar lets you override that
+ * and look at the other one without a new run.
+ *
  * Holdings live in localStorage, not in the repo. The repo is public (that is what makes
  * Pages free), and which coins you own is nobody else's business. Everything the app needs
  * to highlight them it can do client-side; `config/holdings.json` exists only so the push
@@ -16,10 +21,13 @@ import { pushSupported, enablePush, subscriptionDrift, currentSubscription, mark
 const DATA_URL = './data/latest.json';
 const HOLDINGS_KEY = 'cryptotracker.holdings.v1';
 const TAB_KEY = 'cryptotracker.tab.v1';
+const BASE_KEY = 'cryptotracker.base.v1';
 
 const state = {
   report: null,
-  tab: 'buy',
+  tab: 'buitenkans',
+  /** 'auto' follows the report's own primaryBase; 'usd' and 'btc' force one. */
+  base: 'auto',
   holdings: new Set(),
 };
 
@@ -72,6 +80,13 @@ function money(n, digits) {
   return n.toLocaleString('nl-NL', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
+/**
+ * A price in whichever base is on screen. BTC ratios are tiny - an altcoin at 0,00002341 BTC
+ * rounds to 0,000023 with the USD rule and loses two meaningful digits, so they get eight.
+ */
+const price = (n, base) => (base === 'btc' ? money(n, 8) : money(n));
+const unit = (base) => (base === 'btc' ? '₿' : '$');
+
 const eur = (n) =>
   Number.isFinite(n) ? n.toLocaleString('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }) : '-';
 
@@ -90,17 +105,51 @@ function hoursSince(isoDate) {
 /** The coin's own view of whether it is owned, from local storage rather than the report. */
 const isOwned = (coin) => state.holdings.has(coin.symbol);
 
+/**
+ * The metric set to render for this coin, honouring the base switch.
+ *
+ * Falls back to USD whenever the BTC set does not exist - BTC itself, and any coin with no
+ * overlapping history - so forcing the BTC view never blanks out rows.
+ */
+function setFor(coin) {
+  const wanted = state.base === 'auto' ? coin.primaryBase : state.base;
+  return wanted === 'btc' && coin.btcPair ? coin.btcPair : coin.usd;
+}
+
+/** Is the coin being shown on the base the report itself scored it on? */
+const onPrimary = (coin) => setFor(coin).base === coin.primaryBase;
+
+/* ------------------------------------------------------------------ buckets */
+
+const BUCKETS = {
+  buitenkans: { label: 'Buitenkans', cls: 'b-kans', icon: '◆' },
+  'winst-pakken': { label: 'Winst pakken', cls: 'b-winst', icon: '▲' },
+  verkopen: { label: 'Verkopen', cls: 'b-verkoop', icon: '▼' },
+  houden: { label: 'Houden', cls: 'b-houden', icon: '=' },
+};
+
+function bucketBadge(coin) {
+  const b = BUCKETS[coin.bucket] ?? BUCKETS.houden;
+  const span = el('span', `bucket ${b.cls}`);
+  span.append(el('i', null, b.icon), document.createTextNode(b.label));
+  if (coin.bucket === 'verkopen' && coin.sellInto) {
+    span.append(el('em', null, coin.sellInto === 'btc' ? '→ BTC' : '→ €'));
+  }
+  span.title = coin.bucketReason;
+  return span;
+}
+
 /* ------------------------------------------------------------------ cells */
 
 function kijunCell(cell) {
   const span = el('span');
-  if (cell.verdict === 'unknown') {
+  if (!cell || cell.verdict === 'unknown') {
     span.append(el('span', 'na', '–'));
     return span;
   }
   span.append(el('span', cell.verdict === 'above' ? 'yes' : 'no', cell.verdict === 'above' ? '✓' : '✗'));
   // A candle can be above the line AND have touched it: the wick-down support test.
-  if (cell.touchedByDaily) span.append(el('span', 'touch', ' •'));
+  if (cell.touchedByRef) span.append(el('span', 'touch', ' •'));
   if (cell.crossedBelowToday) span.append(el('span', 'no', ' ↓'));
   if (cell.crossedAboveToday) span.append(el('span', 'yes', ' ↑'));
   return span;
@@ -126,23 +175,36 @@ function emaCell(cell) {
   else if (cell.verdict === 'above') span.append(el('span', cell.state === 'ok' ? 'yes' : 'prov', cell.state === 'ok' ? '✓' : '~✓'));
   else if (cell.verdict === 'below') span.append(el('span', cell.state === 'ok' ? 'no' : 'prov', cell.state === 'ok' ? '✗' : '~✗'));
   else span.append(el('span', 'prov', '·'));
-  if (cell.touchedByDaily) span.append(el('span', 'touch', ' •'));
+  if (cell.touchedByRef) span.append(el('span', 'touch', ' •'));
   return span;
 }
 
-function btcCell(coin) {
-  const b = coin.btc;
-  if (b.coinBtcInTrend === null) return el('span', 'na', '–');
-  if (b.preferBtc) return el('span', 'pill warnp', 'liever BTC');
-  return el('span', 'pill ok', 'verslaat BTC');
+/** How this coin looks on the base that is NOT on screen - the score's confirmation cell. */
+function otherBaseCell(coin) {
+  const shown = setFor(coin);
+  const other = shown.base === 'btc' ? coin.usd : coin.btcPair;
+  if (!other) return el('span', 'na', '–');
+  const v = other.kijun.daily.verdict;
+  const word = other.base === 'btc' ? 'BTC' : 'USD';
+  if (v === 'unknown') return el('span', 'na', '–');
+  return el('span', `pill ${v === 'above' ? 'ok' : 'warnp'}`, `${v === 'above' ? '✓' : '✗'} ${word}`);
 }
 
 function scoreCell(coin) {
   const wrap = el('td', 'num score-bar');
-  const pct = coin.score.max > 0 ? (coin.score.points / coin.score.max) * 100 : 0;
+  const share = coin.score.max > 0 ? (coin.score.points / coin.score.max) * 100 : 0;
   const fill = el('div', 'fill');
-  fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  fill.style.width = `${Math.max(0, Math.min(100, share))}%`;
   wrap.append(fill, el('span', null, `${coin.score.points.toFixed(0)}/${coin.score.max.toFixed(0)}`));
+  return wrap;
+}
+
+/** The extra score that matters for the tab you are on, as a compact bar. */
+function extraCell(value, cls) {
+  const wrap = el('td', 'num score-bar');
+  const fill = el('div', `fill ${cls}`);
+  fill.style.width = `${Math.max(0, Math.min(100, value))}%`;
+  wrap.append(fill, el('span', null, value.toFixed(0)));
   return wrap;
 }
 
@@ -164,9 +226,28 @@ function starButton(coin, onChange) {
 const EMA_LABEL = (c) => `${c.period}${c.timeframe === 'daily' ? 'D' : c.timeframe === 'weekly' ? 'W' : 'M'}`;
 
 const TABS = [
-  { id: 'buy', label: 'Koopkandidaten', note: 'Boven de daily Kijun-sen, en het muntpaar tegen BTC staat ook boven zijn Kijun.' },
-  { id: 'preferBtc', label: 'Liever BTC', note: 'In trend, maar het {munt}/BTC-paar staat onder zijn Kijun terwijl BTC zelf erboven staat.' },
-  { id: 'dropped', label: 'Uitgevallen', note: 'Gisteren nog boven de daily Kijun-sen, vandaag niet meer.' },
+  {
+    id: 'buitenkans',
+    label: 'Buitenkans',
+    extra: 'kans',
+    note:
+      'Boven de daily Kijun-sen én in de afgelopen dagen een geslaagde test van een belangrijk niveau: ' +
+      'de koers kwam terug tot op de lijn en sloot er toch weer bóven. Hoe verser de test en hoe zwaarder het niveau, hoe hoger de kansscore.',
+  },
+  {
+    id: 'winst-pakken',
+    label: 'Winst pakken',
+    extra: 'winst',
+    note:
+      'Boven de daily Kijun-sen, maar de koers loopt van onderaf tegen een belangrijk niveau aan. ' +
+      'Dat is waar een stijging vaak stokt — het spiegelbeeld van een buitenkans.',
+  },
+  {
+    id: 'verkopen',
+    label: 'Verkopen',
+    note: 'Onder de daily Kijun-sen. Er staat bij waar de opbrengst heen moet: naar BTC zolang BTC zelf boven zijn Kijun staat, anders naar euro.',
+  },
+  { id: 'buy', label: 'Koopkandidaten', note: 'Alles boven de daily Kijun-sen dat je nog niet bezit, ongeacht bakje.' },
   { id: 'owned', label: 'Mijn posities', note: 'Munten die je met de ster hebt gemarkeerd. Dit blijft op dit apparaat.' },
   { id: 'portfolio', label: 'Portefeuille', note: '' },
   { id: 'all', label: 'Alles', note: 'De volledige lijst, gesorteerd op score.' },
@@ -175,12 +256,14 @@ const TABS = [
 function coinsFor(tab) {
   const all = state.report?.coins ?? [];
   switch (tab) {
+    case 'buitenkans':
+      return [...all.filter((c) => c.bucket === 'buitenkans')].sort((a, b) => b.opportunity.points - a.opportunity.points);
+    case 'winst-pakken':
+      return [...all.filter((c) => c.bucket === 'winst-pakken')].sort((a, b) => b.takeProfit.points - a.takeProfit.points);
+    case 'verkopen':
+      return all.filter((c) => c.bucket === 'verkopen');
     case 'buy':
-      return all.filter((c) => c.inTrend && !c.droppedOutToday && c.btc.preferBtc !== true && !isOwned(c));
-    case 'preferBtc':
-      return all.filter((c) => c.inTrend && !c.droppedOutToday && c.btc.preferBtc === true && !isOwned(c));
-    case 'dropped':
-      return all.filter((c) => c.droppedOutToday);
+      return all.filter((c) => c.inTrend && !isOwned(c));
     case 'owned':
       return all.filter((c) => isOwned(c));
     case 'all':
@@ -210,6 +293,30 @@ function renderTabs() {
   }
 }
 
+const BASE_CHOICES = [
+  ['auto', 'Automatisch'],
+  ['btc', 'Tegen BTC'],
+  ['usd', 'In dollars'],
+];
+
+function renderBaseSwitch() {
+  const host = document.getElementById('base-switch');
+  host.replaceChildren();
+  const auto = state.report.btcInTrend ? 'tegen BTC' : 'in dollars';
+  host.append(el('span', 'base-label', 'Meten'));
+  for (const [id, label] of BASE_CHOICES) {
+    const b = el('button', 'seg');
+    b.setAttribute('aria-selected', String(state.base === id));
+    b.textContent = id === 'auto' ? `Automatisch (${auto})` : label;
+    b.addEventListener('click', () => {
+      state.base = id;
+      remember(BASE_KEY, id);
+      render();
+    });
+    host.append(b);
+  }
+}
+
 function renderHeader() {
   const r = state.report;
   const fresh = document.getElementById('freshness');
@@ -221,22 +328,27 @@ function renderHeader() {
     ? `⚠ Gegevens van ${r.asOf} — dat is ${Math.floor(age / 24)} dagen oud, de laatste run is waarschijnlijk mislukt`
     : `Slotkoersen van ${r.asOf} (UTC) · berekend ${new Date(r.generatedAt).toLocaleString('nl-NL')}`;
 
+  // The single most important line in the app: it decides both which base everything is
+  // measured against and where the money goes when something has to be sold.
   const btc = document.getElementById('btc-line');
+  btc.className = `btc-state ${r.btcInTrend ? 'up' : 'down'}`;
   btc.replaceChildren();
-  if (r.btcInTrend) {
-    btc.append(document.createTextNode('BTC staat '), el('b', null, 'boven'), document.createTextNode(' zijn daily Kijun-sen — het BTC-filter is actief.'));
-  } else {
-    btc.append(
-      document.createTextNode('BTC staat '),
-      el('b', null, 'onder'),
-      document.createTextNode(' zijn daily Kijun-sen — uitwijken naar BTC is nu geen veilige haven, dus het filter staat uit.'),
-    );
-  }
+  btc.append(el('span', 'dot'), el('b', null, r.btcInTrend ? 'BTC boven zijn daily Kijun-sen' : 'BTC onder zijn daily Kijun-sen'));
+  btc.append(
+    el(
+      'span',
+      'why',
+      r.btcInTrend
+        ? 'Alles wordt gemeten tegen BTC · verkoop een altcoin naar BTC'
+        : 'Alles wordt gemeten in dollars · verkoop een altcoin naar euro',
+    ),
+  );
 
   const p = r.params;
   document.getElementById('params').textContent =
     `Ichimoku ${p.tenkan}/${p.kijun}/${p.senkouB}, verschuiving ${p.displacement}−${p.extraBars}=${p.displacement - p.extraBars} bars, ` +
-    `cloud ${p.cloudMode === 'displaced' ? 'traditioneel verschoven' : 'no-offset'} · Senkou A = (${p.senkouASource})`;
+    `cloud ${p.cloudMode === 'displaced' ? 'traditioneel verschoven' : 'no-offset'} · Senkou A = (${p.senkouASource})` +
+    (p.levels ? ` · retest-venster ${p.levels.retestWindowDays} dagen · nabij = binnen ${p.levels.approachPct}%` : '');
 
   const warn = state.report.universe.warnings ?? [];
   const box = document.getElementById('warnings-box');
@@ -246,24 +358,31 @@ function renderHeader() {
   ul.replaceChildren(...warn.map((w) => el('li', null, w)));
 }
 
-function renderTable(coins) {
+function renderTable(coins, tab) {
   const wrap = el('div', 'table-wrap');
   const table = el('table');
-  const emaCols = coins[0]?.ema ?? state.report.coins[0]?.ema ?? [];
+  const sample = coins[0] ?? state.report.coins[0];
+  const emaCols = sample ? setFor(sample).ema : [];
+  const base = sample ? setFor(sample).base : 'usd';
+  const showBucket = tab.id === 'owned' || tab.id === 'all' || tab.id === 'buy';
 
   const head = el('tr');
-  for (const h of ['', '#', 'Munt', 'Prijs', 'Δ%', 'Kijun D', 'Kijun W', 'Cloud D', 'Cloud W']) {
-    head.append(el('th', h === 'Prijs' || h === 'Δ%' ? 'num' : null, h));
-  }
+  const cols = ['', '#', 'Munt', `Koers ${unit(base)}`, 'Δ%', 'Kijun D', 'Kijun W', 'Cloud D', 'Cloud W'];
+  for (const h of cols) head.append(el('th', h.startsWith('Koers') || h === 'Δ%' ? 'num' : null, h));
   for (const c of emaCols) head.append(el('th', null, `EMA${EMA_LABEL(c)}`));
-  head.append(el('th', null, 'vs BTC'), el('th', 'num', 'Score'));
+  head.append(el('th', null, base === 'btc' ? 'ook in $' : 'ook vs BTC'));
+  if (showBucket) head.append(el('th', null, 'Bakje'));
+  if (tab.extra) head.append(el('th', 'num', tab.extra === 'kans' ? 'Kans' : 'Winst'));
+  head.append(el('th', 'num', 'Score'));
   const thead = el('thead');
   thead.append(head);
   table.append(thead);
 
   const body = el('tbody');
   for (const coin of coins) {
+    const m = setFor(coin);
     const tr = el('tr');
+    if (!onPrimary(coin)) tr.classList.add('off-base');
     tr.append(td(starButton(coin, render)));
     tr.append(el('td', 'rank', String(coin.rank)));
 
@@ -271,7 +390,7 @@ function renderTable(coins) {
     sym.append(document.createTextNode(coin.symbol), el('span', 'name', coin.name));
     tr.append(sym);
 
-    tr.append(el('td', 'num', money(coin.closeUsd)));
+    tr.append(el('td', 'num', price(m.close, m.base)));
     const chg = el('td', 'num');
     chg.append(
       coin.changePct === null
@@ -280,12 +399,14 @@ function renderTable(coins) {
     );
     tr.append(chg);
 
-    tr.append(td(kijunCell(coin.kijun.daily)));
-    tr.append(td(kijunCell(coin.kijun.weekly)));
-    tr.append(td(cloudCell(coin.cloud.daily)));
-    tr.append(td(cloudCell(coin.cloud.weekly)));
-    for (const cell of coin.ema) tr.append(td(emaCell(cell)));
-    tr.append(td(btcCell(coin)));
+    tr.append(td(kijunCell(m.kijun.daily)));
+    tr.append(td(kijunCell(m.kijun.weekly)));
+    tr.append(td(cloudCell(m.cloud.daily)));
+    tr.append(td(cloudCell(m.cloud.weekly)));
+    for (const cell of m.ema) tr.append(td(emaCell(cell)));
+    tr.append(td(otherBaseCell(coin)));
+    if (showBucket) tr.append(td(bucketBadge(coin)));
+    if (tab.extra) tr.append(extraCell(tab.extra === 'kans' ? coin.opportunity.points : coin.takeProfit.points, tab.extra));
     tr.append(scoreCell(coin));
 
     tr.addEventListener('click', () => showDetail(coin));
@@ -296,22 +417,23 @@ function renderTable(coins) {
   return wrap;
 }
 
-function renderCards(coins) {
+function renderCards(coins, tab) {
   const wrap = el('div', 'cards');
   for (const coin of coins) {
+    const m = setFor(coin);
     const card = el('div', 'card');
     const head = el('div', 'card-head');
     head.append(el('span', 'symbol', coin.symbol), el('span', 'name', coin.name), el('span', 'rank', `#${coin.rank}`));
     card.append(head);
 
-    const price = el('div', 'card-price');
-    price.append(
-      document.createTextNode(`$${money(coin.closeUsd)}  `),
-      coin.changePct === null
-        ? el('span', 'na', '')
-        : el('span', coin.changePct >= 0 ? 'yes' : 'no', pct(coin.changePct, 1)),
+    card.append(bucketBadge(coin));
+
+    const p = el('div', 'card-price');
+    p.append(
+      document.createTextNode(`${unit(m.base)}${price(m.close, m.base)}  `),
+      coin.changePct === null ? el('span', 'na', '') : el('span', coin.changePct >= 0 ? 'yes' : 'no', pct(coin.changePct, 1)),
     );
-    card.append(price);
+    card.append(p);
 
     const grid = el('div', 'card-grid');
     const row = (label, node) => {
@@ -319,15 +441,19 @@ function renderCards(coins) {
       d.append(el('span', null, label), node);
       grid.append(d);
     };
-    row('Kijun D', kijunCell(coin.kijun.daily));
-    row('Kijun W', kijunCell(coin.kijun.weekly));
-    row('Cloud D', cloudCell(coin.cloud.daily));
-    row('Cloud W', cloudCell(coin.cloud.weekly));
-    for (const cell of coin.ema) row(`EMA ${EMA_LABEL(cell)}`, emaCell(cell));
+    row('Kijun D', kijunCell(m.kijun.daily));
+    row('Kijun W', kijunCell(m.kijun.weekly));
+    row('Cloud D', cloudCell(m.cloud.daily));
+    row('Cloud W', cloudCell(m.cloud.weekly));
+    for (const cell of m.ema) row(`EMA ${EMA_LABEL(cell)}`, emaCell(cell));
+    row(m.base === 'btc' ? 'Ook in $' : 'Ook vs BTC', otherBaseCell(coin));
     card.append(grid);
 
     const foot = el('div', 'card-foot');
-    foot.append(starButton(coin, render), btcCell(coin));
+    foot.append(starButton(coin, render));
+    if (tab.extra) {
+      foot.append(el('span', `chip ${tab.extra}`, `${tab.extra === 'kans' ? 'kans' : 'winst'} ${(tab.extra === 'kans' ? coin.opportunity.points : coin.takeProfit.points).toFixed(0)}`));
+    }
     const score = el('span', null, `score ${coin.score.points.toFixed(0)}/${coin.score.max.toFixed(0)}`);
     score.style.marginLeft = 'auto';
     score.style.fontFamily = 'var(--mono)';
@@ -497,16 +623,77 @@ function renderPortfolio() {
 const SCORE_LABELS = {
   'Kijun daily': 'Kijun-sen daily',
   'Kijun weekly': 'Kijun-sen weekly',
-  'coin/BTC above Kijun': 'Muntpaar tegen BTC boven zijn Kijun',
+  confirmation: 'Bevestiging op de andere basis',
   'Cloud daily': 'Cloud daily',
   'Cloud weekly': 'Cloud weekly',
 };
-const scoreLabel = (key) => SCORE_LABELS[key] ?? key.replace(/^EMA(d+) (daily|weekly|monthly)$/, (_, p, tf) =>
-  `EMA ${p} ${tf === 'daily' ? 'daily' : tf === 'weekly' ? 'weekly' : 'monthly'}`);
+const scoreLabel = (key) => SCORE_LABELS[key] ?? key.replace(/^EMA(\d+) (daily|weekly|monthly)$/, (_, p, tf) => `EMA ${p} ${tf}`);
 
 const dec2 = (n) => n.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * The levels table: every line the coin is measured against, with the distance to it.
+ *
+ * `gapPct` is how far the CLOSE has to move to reach that level, so a negative number means
+ * the level is already below the price (support, and how much room there is before it is
+ * lost) and a positive one means it is overhead (resistance, and how far the rally has left).
+ */
+function levelsTable(m, live) {
+  const t = el('table', 'levels');
+  const head = el('tr');
+  for (const h of ['Niveau', 'Waarde', 'Δ naar niveau', '']) head.append(el('th', h === 'Niveau' ? null : 'num', h));
+  const thead = el('thead');
+  thead.append(head);
+  t.append(thead);
+
+  const body = el('tbody');
+  const rowFor = (label, value, gap, note, tone) => {
+    const tr = el('tr');
+    tr.append(el('td', null, label));
+    tr.append(el('td', 'num', value === null || value === undefined ? '–' : `${unit(m.base)}${price(value, m.base)}`));
+    const g = el('td', 'num');
+    g.append(gap === null || gap === undefined ? el('span', 'na', '–') : el('span', gap > 0 ? 'no' : 'yes', pct(gap, 1)));
+    tr.append(g);
+    tr.append(td(note ? el('span', tone ?? 'touch', note) : null));
+    body.append(tr);
+  };
+
+  // "Nu" first: the still-forming candle, measured against the same reference close, so the
+  // whole table reads as one list of "how far is the price from X".
+  if (live) rowFor('Nu (nog niet gesloten)', live.value, live.gap, 'live', 'prov');
+  rowFor('Slotkoers (referentie)', m.close, 0, null);
+
+  for (const l of m.levels) {
+    let note = null;
+    let tone = 'touch';
+    if (l.retest) {
+      note = l.retest.kind === 'retest' ? `retest ${l.retest.barsAgo}d` : `teruggepakt ${l.retest.barsAgo}d`;
+      tone = 'yes';
+    } else if (l.approaching) {
+      note = 'dichtbij';
+      tone = 'no';
+    } else if (l.touchedByRef) {
+      note = 'geraakt';
+    }
+    rowFor(l.label, l.value, l.gapPct, note, tone);
+  }
+  t.append(body);
+  return t;
+}
+
+function extraBlock(extra, emptyText) {
+  if (extra.contributions.length === 0) return el('p', 'section-note', emptyText);
+  const bd = el('div', 'bd');
+  for (const c of extra.contributions) {
+    bd.append(el('span', null, c.label));
+    bd.append(el('span', 'got yes', c.points.toFixed(1)));
+    bd.append(el('span', 'of', c.detail));
+  }
+  return bd;
+}
+
 function showDetail(coin) {
+  const m = setFor(coin);
   const dlg = document.getElementById('detail');
   document.getElementById('detail-title').textContent = `${coin.symbol} · ${coin.name}`;
   const body = document.getElementById('detail-body');
@@ -517,47 +704,58 @@ function showDetail(coin) {
     body.append(node);
   };
 
-  const kv = el('div', 'kv');
-  const pair = (k, v) => {
-    const d = el('div');
-    d.append(el('span', 'k', k), el('span', 'v', v));
-    kv.append(d);
-  };
-  pair('Slotkoers', `$${money(coin.closeUsd)}`);
-  if (coin.live) pair('Nu (nog niet gesloten)', `$${money(coin.live.closeUsd)}`);
-  pair('Kijun-sen daily', coin.kijun.daily.value === null ? '–' : `$${money(coin.kijun.daily.value)}`);
-  pair('Kijun-sen weekly', coin.kijun.weekly.value === null ? '–' : `$${money(coin.kijun.weekly.value)}`);
-  pair('Cloud daily', coin.cloud.daily.top === null ? '–' : `$${money(coin.cloud.daily.bottom)} – $${money(coin.cloud.daily.top)}`);
-  pair('Cloud weekly', coin.cloud.weekly.top === null ? '–' : `$${money(coin.cloud.weekly.bottom)} – $${money(coin.cloud.weekly.top)}`);
-  pair('Auxiliary (55)', coin.kijunAux === null ? '–' : `$${money(coin.kijunAux)}`);
-  pair('Dagen aan data', `${coin.dataQuality.dailyBars} d · ${coin.dataQuality.weeklyBars} w · ${coin.dataQuality.monthlyBars} m`);
-  section('Niveaus', kv);
+  body.append(bucketBadge(coin));
+  body.append(el('p', 'section-note', coin.bucketReason));
 
-  if (coin.cloud.daily.boundaryTest) {
+  // The live candle is priced in dollars only, so it joins the levels table only when the
+  // dollar base is on screen; under the BTC base it gets its own line just below.
+  const live = m.base === 'usd' && coin.live ? { value: coin.live.closeUsd, gap: coin.live.changePct } : null;
+  section(
+    m.base === 'btc' ? `Niveaus tegen BTC (${coin.symbol}/BTC, synthetisch berekend)` : 'Niveaus in dollars',
+    levelsTable(m, live),
+  );
+
+  if (m.base === 'btc' && coin.live) {
+    body.append(
+      el('p', 'section-note', `Nu (nog niet gesloten, in dollars): $${money(coin.live.closeUsd)} · ${pct(coin.live.changePct, 2)} ten opzichte van de slotkoers.`),
+    );
+  }
+
+  if (m.cloud.daily.boundaryTest) {
     const note =
-      coin.cloud.daily.boundaryTest === 'support'
+      m.cloud.daily.boundaryTest === 'support'
         ? 'De candle raakte de cloud van bovenaf: een steuntest.'
-        : coin.cloud.daily.boundaryTest === 'resistance'
+        : m.cloud.daily.boundaryTest === 'resistance'
           ? 'De candle raakte de cloud van onderaf: een weerstandstest.'
           : 'De candle raakte een cloudrand van binnenuit.';
     section('Cloudcontact', el('p', 'section-note', note));
   }
 
-  const btcBox = el('div', 'kv');
+  section(
+    `Buitenkans ${coin.opportunity.points.toFixed(0)}`,
+    extraBlock(coin.opportunity, 'Geen geslaagde test van een belangrijk niveau in het venster.'),
+  );
+  section(
+    `Winst pakken ${coin.takeProfit.points.toFixed(0)}`,
+    extraBlock(coin.takeProfit, 'Geen belangrijk niveau vlak boven de koers.'),
+  );
+
+  const otherSet = m.base === 'btc' ? coin.usd : coin.btcPair;
+  const otherBox = el('div', 'kv');
   const bp = (k, v) => {
     const d = el('div');
     d.append(el('span', 'k', k), el('span', 'v', v));
-    btcBox.append(d);
+    otherBox.append(d);
   };
-  if (coin.btc.coinBtcInTrend === null) {
-    bp('Tegen BTC', coin.symbol === 'BTC' ? 'n.v.t. — dit is BTC zelf' : 'onvoldoende data');
+  if (!otherSet) {
+    bp('Andere basis', coin.symbol === 'BTC' ? 'n.v.t. — dit is BTC zelf' : 'onvoldoende overlappende data');
   } else {
-    bp(`${coin.symbol}/BTC`, money(coin.btc.close, 8));
-    bp('Kijun van dat paar', money(coin.btc.kijun, 8));
-    bp('Verslaat BTC', coin.btc.coinBtcInTrend ? 'ja' : 'nee');
-    bp('Advies', coin.btc.preferBtc ? 'liever BTC aanhouden' : 'de munt zelf mag');
+    bp('Slotkoers', `${unit(otherSet.base)}${price(otherSet.close, otherSet.base)}`);
+    bp('Kijun-sen daily', otherSet.kijun.daily.value === null ? '–' : `${unit(otherSet.base)}${price(otherSet.kijun.daily.value, otherSet.base)}`);
+    bp('Boven de daily Kijun', otherSet.kijun.daily.verdict === 'above' ? 'ja' : otherSet.kijun.daily.verdict === 'unknown' ? 'onbekend' : 'nee');
+    bp('Cloud daily', otherSet.cloud.daily.position);
   }
-  section('Tegenover BTC (synthetisch berekend)', btcBox);
+  section(m.base === 'btc' ? 'Ter controle: dezelfde munt in dollars' : 'Ter controle: dezelfde munt tegen BTC', otherBox);
 
   const bd = el('div', 'bd');
   for (const b of coin.score.breakdown) {
@@ -565,7 +763,21 @@ function showDetail(coin) {
     bd.append(el('span', `got ${b.counted && b.got > 0 ? 'yes' : b.counted ? 'no' : 'na'}`, b.counted ? dec2(b.got) : 'n.v.t.'));
     bd.append(el('span', 'of', `/ ${dec2(b.of)}`));
   }
-  section(`Score ${coin.score.points.toFixed(0)} van ${coin.score.max.toFixed(0)}${coin.score.unavailable > 0 ? ` · ${coin.score.unavailable.toFixed(0)} punten niet te beoordelen door te weinig historie` : ''}`, bd);
+  section(
+    `Score ${coin.score.points.toFixed(0)} van ${coin.score.max.toFixed(0)} · gemeten ${coin.primaryBase === 'btc' ? 'tegen BTC' : 'in dollars'}` +
+      (coin.score.unavailable > 0 ? ` · ${coin.score.unavailable.toFixed(0)} punten niet te beoordelen door te weinig historie` : ''),
+    bd,
+  );
+
+  const dq = el('div', 'kv');
+  const dqp = (k, v) => {
+    const d = el('div');
+    d.append(el('span', 'k', k), el('span', 'v', v));
+    dq.append(d);
+  };
+  dqp('Dagen aan data', `${coin.dataQuality.dailyBars} d · ${coin.dataQuality.weeklyBars} w · ${coin.dataQuality.monthlyBars} m`);
+  dqp('Dagen met een BTC-koppel', String(coin.dataQuality.btcPairBars));
+  section('Databasis', dq);
 
   if (coin.dataQuality.notes.length > 0) {
     const ul = el('ul');
@@ -576,6 +788,51 @@ function showDetail(coin) {
   }
 
   dlg.showModal();
+}
+
+/* ------------------------------------------------------------------ legenda */
+
+const LEGEND = [
+  [
+    'De basismetric: het muntpaar tegen BTC',
+    'Elke munt wordt niet alleen in dollars doorgerekend, maar óók als koers ín bitcoin — het {munt}/BTC-paar. ' +
+      'Dat paar stijgt alleen als de munt hárder stijgt dan bitcoin zelf. Op dat paar liggen dezelfde lijnen als op de dollarkoers: ' +
+      'Kijun-sen, de cloud en de EMA’s. "Muntpaar tegen BTC boven zijn Kijun" betekent dus: de munt wint al een tijd terrein op bitcoin. ' +
+      'Dat is de belangrijkste vraag, want bitcoin aanhouden is altijd het alternatief.',
+  ],
+  [
+    'Waarom de basis soms omschakelt',
+    'Staat BTC zelf boven zijn daily Kijun-sen, dan wordt alles tegen BTC gemeten: uitwijken naar bitcoin is dan een echt alternatief, ' +
+      'dus een altcoin moet het verslaan. Zakt BTC onder zijn eigen Kijun, dan is een dalende bitcoin verslaan niets waard en telt alleen nog ' +
+      'of de munt zich in dollars staande houdt. De regel bovenaan de app zegt welke van de twee nu geldt; met de knoppen eronder kun je altijd handmatig omschakelen.',
+  ],
+  [
+    'Kijun-sen',
+    'De basislijn van Ichimoku: het midden van de hoogste top en de laagste bodem over 35 bars. Erboven sluiten is de definitie van "in trend"; ' +
+      'eronder zakken is het verkoopsignaal waar de hele app op draait.',
+  ],
+  [
+    'De cloud',
+    'Het vlak tussen Senkou A en Senkou B, 35 bars vooruit geprojecteerd. Boven de cloud is sterk, in de cloud is richtingloos, eronder is zwak. ' +
+      'De bovenkant is de steun waar een terugval op stuit; de onderkant is de eerste weerstand als de koers van onderaf terugkomt.',
+  ],
+  ['Bakje: Buitenkans ◆', 'Boven de daily Kijun-sen én in de afgelopen dagen teruggekomen tot op een belangrijk niveau en er toch boven gesloten. Instapmoment.'],
+  ['Bakje: Winst pakken ▲', 'Boven de daily Kijun-sen, maar vlak onder een belangrijk niveau dat van onderaf wordt benaderd. Daar stokt een stijging vaak.'],
+  ['Bakje: Verkopen ▼', 'Onder de daily Kijun-sen. Naar BTC zolang bitcoin zelf boven zijn Kijun staat, anders naar euro.'],
+  ['Bakje: Houden =', 'Boven de daily Kijun-sen, maar zonder verse test en zonder niveau in de buurt. Niets te doen.'],
+  ['Score', 'Nul tot honderd, opgeteld uit de daily en weekly Kijun, beide clouds en de zes EMA-cellen op de basis die nu geldt, plus twintig punten bevestiging als de munt óók op de andere basis boven zijn daily Kijun staat. Cellen zonder genoeg historie tellen niet mee en gaan van het maximum af.'],
+  ['Kansscore en winstscore', 'Nul tot honderd per stuk. De kansscore telt elk geslaagd getest niveau mee, zwaarder naarmate het niveau belangrijker is en de test verser. De winstscore doet hetzelfde met de niveaus die nog boven de koers liggen, zwaarder naarmate ze dichterbij zijn.'],
+  ['Δ naar niveau', 'Hoeveel procent de koers moet bewegen om dat niveau te raken. Negatief betekent dat het niveau eronder ligt (steun); positief dat het erboven ligt (weerstand).'],
+  ['Tekens', '✓ boven · ✗ onder · • de candle raakte de lijn · ↑ ↓ vandaag gekruist · ▲ boven de cloud, ≈ erin, ▼ eronder · ⌃ ⌄ cloudrand geraakt · ⋈ op een twist · ~ waarde nog niet uitgeconvergeerd · – te weinig historie.'],
+];
+
+function renderLegend() {
+  const host = document.getElementById('legend-body');
+  if (!host || host.childElementCount > 0) return;
+  for (const [term, text] of LEGEND) {
+    host.append(el('dt', null, term));
+    host.append(el('dd', null, text));
+  }
 }
 
 /* ------------------------------------------------------------------ meldingen */
@@ -601,8 +858,8 @@ async function renderPush() {
     return;
   }
 
-  const state = await subscriptionDrift();
-  const [tone, message] = PUSH_TEXT[state] ?? PUSH_TEXT.none;
+  const drift = await subscriptionDrift();
+  const [tone, message] = PUSH_TEXT[drift] ?? PUSH_TEXT.none;
   panel.append(el('p', `push-status ${tone}`, message));
 
   const showKey = async () => {
@@ -646,7 +903,7 @@ async function renderPush() {
     panel.append(row);
   };
 
-  if (state === 'ok') {
+  if (drift === 'ok') {
     const again = el('button', 'secondary', 'Sleutel opnieuw tonen');
     again.addEventListener('click', () => {
       again.remove();
@@ -663,7 +920,7 @@ async function renderPush() {
     return;
   }
 
-  if (state === 'not-pasted' || state === 'changed') {
+  if (drift === 'not-pasted' || drift === 'changed') {
     await showKey();
     return;
   }
@@ -690,6 +947,8 @@ function render() {
   if (!state.report) return;
   renderHeader();
   renderTabs();
+  renderBaseSwitch();
+  renderLegend();
 
   const main = document.getElementById('main');
   main.replaceChildren();
@@ -704,6 +963,18 @@ function render() {
   const coins = coinsFor(tab.id);
   if (tab.note) main.append(el('p', 'section-note', tab.note));
 
+  if (tab.id === 'verkopen' && coins.length > 0) {
+    main.append(
+      el(
+        'p',
+        'section-note strong',
+        state.report.btcInTrend
+          ? 'BTC staat boven zijn Kijun-sen: verkoop deze munten naar BTC, niet naar euro.'
+          : 'BTC staat onder zijn Kijun-sen: er is geen veilige haven in bitcoin, verkoop naar euro.',
+      ),
+    );
+  }
+
   if (coins.length === 0) {
     const msg =
       tab.id === 'owned'
@@ -713,7 +984,7 @@ function render() {
     return;
   }
 
-  main.append(renderTable(coins), renderCards(coins));
+  main.append(renderTable(coins, tab), renderCards(coins, tab));
 
   if (tab.id === 'owned') {
     const p = el('p', 'section-note');
@@ -745,8 +1016,10 @@ function showError(err) {
 
 state.holdings = loadHoldings();
 try {
-  const saved = localStorage.getItem(TAB_KEY);
-  if (saved && TABS.some((t) => t.id === saved)) state.tab = saved;
+  const savedTab = localStorage.getItem(TAB_KEY);
+  if (savedTab && TABS.some((t) => t.id === savedTab)) state.tab = savedTab;
+  const savedBase = localStorage.getItem(BASE_KEY);
+  if (savedBase && BASE_CHOICES.some(([id]) => id === savedBase)) state.base = savedBase;
 } catch {
   /* ignore */
 }

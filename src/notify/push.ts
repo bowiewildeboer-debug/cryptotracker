@@ -41,16 +41,18 @@ export function periodNote(asOf: string): string {
 
 export function buildPayload(report: Report, appUrl: string): string {
   const s = report.sections;
+  // The buckets Bowie has to act on come first; "houden" needs no notification at all.
   const top = report.coins
-    .filter((c) => c.inTrend && c.btc.preferBtc !== true)
+    .filter((c) => c.bucket === 'buitenkans')
     .slice(0, 3)
     .map((c) => c.symbol)
     .join(', ');
 
-  const parts = [`${s.buyCandidates.length} koopkandidaten`];
-  if (s.droppedOut.length > 0) parts.push(`${s.droppedOut.length} uitgevallen`);
-  if (s.preferBtc.length > 0) parts.push(`${s.preferBtc.length}x liever BTC`);
-  if (!report.btcInTrend) parts.push('BTC onder zijn Kijun');
+  const parts = [`${s.buitenkans.length} buitenkans`];
+  if (s.verkopen.length > 0) parts.push(`${s.verkopen.length} verkopen`);
+  if (s.winstPakken.length > 0) parts.push(`${s.winstPakken.length}x winst pakken`);
+  // This one line decides where the proceeds of every sale go, so it is never omitted.
+  parts.push(report.btcInTrend ? 'BTC boven zijn Kijun — verkoop naar BTC' : 'BTC onder zijn Kijun — verkoop naar euro');
   const note = periodNote(report.asOf);
   if (note) parts.push(note);
 
@@ -59,10 +61,10 @@ export function buildPayload(report: Report, appUrl: string): string {
     web_push: 8030,
     notification: {
       title: `Crypto ${report.asOf}: ${parts[0]}`,
-      body: `${parts.slice(1).join(' · ') || 'geen wijzigingen'}${top ? `\nSterkst: ${top}` : ''}`,
+      body: `${parts.slice(1).join(' · ')}${top ? `\nSterkst: ${top}` : ''}`,
       navigate: appUrl,
       tag: 'daily-report',
-      app_badge: String(s.buyCandidates.length),
+      app_badge: String(s.buitenkans.length + s.verkopen.length),
     },
   });
 }

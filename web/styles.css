@@ -57,8 +57,61 @@ h1 { font-size: 17px; margin: 0; letter-spacing: -0.2px; }
 
 .freshness { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .freshness.stale { color: var(--warn); font-weight: 600; }
-.btc-line { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-.btc-line b { color: var(--text); }
+
+/* The BTC state is the app's frame of reference, so it gets a band of its own. */
+.btc-state {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px;
+  margin-top: 7px; padding: 7px 11px;
+  border: 1px solid var(--line); border-left-width: 4px; border-radius: 9px;
+  background: var(--panel); font-size: 13px;
+}
+.btc-state b { font-weight: 700; }
+.btc-state .why { color: var(--muted); font-size: 12px; }
+.btc-state .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.btc-state.up { border-left-color: var(--good); }
+.btc-state.up .dot { background: var(--good); }
+.btc-state.up b { color: var(--good); }
+.btc-state.down { border-left-color: var(--bad); }
+.btc-state.down .dot { background: var(--bad); }
+.btc-state.down b { color: var(--bad); }
+
+/* ---------- base switch + legend ---------- */
+.basebar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 16px; max-width: 1400px; margin: 0 auto;
+}
+.segmented { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.segmented .base-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.seg {
+  background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 7px; padding: 4px 9px; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.seg[aria-selected="true"] { background: var(--panel-2); border-color: var(--accent); color: var(--text); font-weight: 600; }
+
+.legend-box { margin-left: auto; font-size: 12.5px; }
+.legend-box > summary { cursor: pointer; color: var(--accent); }
+.legend-box dl {
+  margin: 10px 0 0; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.legend-box dt { font-weight: 650; margin-top: 10px; }
+.legend-box dt:first-child { margin-top: 0; }
+.legend-box dd { margin: 3px 0 0; color: var(--muted); line-height: 1.5; }
+/* Open, the legend is a full-width block rather than a chip pinned to the right. */
+.legend-box[open] { margin-left: 0; flex: 1 1 100%; }
+
+/* ---------- buckets ---------- */
+.bucket {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid transparent;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap;
+}
+.bucket i { font-style: normal; }
+.bucket em { font-style: normal; opacity: 0.8; font-weight: 500; }
+.b-kans { color: var(--good); border-color: var(--good); }
+.b-winst { color: var(--warn); border-color: var(--warn); }
+.b-verkoop { color: var(--bad); border-color: var(--bad); }
+.b-houden { color: var(--muted); border-color: var(--line); }
 
 .icon-btn {
   background: var(--panel-2);
@@ -141,7 +194,18 @@ td.sym .name { display: block; font-weight: 400; font-size: 11px; color: var(--f
 
 .score-bar { position: relative; min-width: 84px; }
 .score-bar .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: 0.18; border-radius: 3px; }
+.score-bar .fill.kans { background: var(--good); }
+.score-bar .fill.winst { background: var(--warn); }
 .score-bar span { position: relative; font-family: var(--mono); font-size: 12px; }
+
+/* A row shown on a base the report did not score it on reads as a manual override. */
+tbody tr.off-base td.sym { opacity: 0.75; }
+tbody tr.off-base td.sym::after { content: " ⇄"; color: var(--accent); }
+
+.section-note.strong { color: var(--text); font-weight: 600; }
+.chip { padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid; }
+.chip.kans { color: var(--good); border-color: var(--good); }
+.chip.winst { color: var(--warn); border-color: var(--warn); }
 
 .star { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 15px; padding: 0 2px; }
 .star.on { color: var(--warn); }
@@ -153,6 +217,8 @@ td.sym .name { display: block; font-weight: 400; font-size: 11px; color: var(--f
 .card-head .symbol { font-weight: 700; font-size: 16px; }
 .card-head .name { color: var(--faint); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-price { font-family: var(--mono); font-size: 13px; }
+.card > .bucket { margin: 6px 0 2px; }
+#detail-body > .bucket { margin-bottom: 6px; }
 .card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 12px; margin-top: 8px; font-size: 12.5px; }
 .card-grid div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dotted var(--line); padding: 2px 0; }
 .card-grid span:first-child { color: var(--muted); }
@@ -194,6 +260,11 @@ td.sym .name { display: block; font-weight: 400; font-size: 11px; color: var(--f
 .kv .k { color: var(--muted); }
 .kv .v { font-family: var(--mono); }
 .bd { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; font-size: 12.5px; align-items: baseline; }
+table.levels { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.levels th { position: static; background: none; padding: 3px 0; border-bottom: 1px solid var(--line); }
+table.levels td { padding: 3px 0; border-bottom: 1px dotted var(--line); white-space: nowrap; }
+table.levels td:not(:first-child), table.levels th:not(:first-child) { padding-left: 10px; }
+table.levels tr:last-child td { border-bottom: 0; }
 .bd .of { color: var(--faint); font-family: var(--mono); }
 .bd .got { font-family: var(--mono); }
 

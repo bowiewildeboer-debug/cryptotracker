@@ -1,4 +1,5 @@
 import { runDaily } from './pipeline.ts';
+import { primaryOf } from './analysis/signals.ts';
 
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -19,30 +20,38 @@ const report = await runDaily({
 });
 
 const s = report.sections;
-console.log(`\nas of ${report.asOf} UTC  ·  BTC ${report.btcInTrend ? 'ABOVE' : 'BELOW'} its daily Kijun`);
+const base = report.btcInTrend ? '{coin}/BTC' : 'USD';
+console.log(`\nas of ${report.asOf} UTC  ·  BTC ${report.btcInTrend ? 'ABOVE' : 'BELOW'} its daily Kijun  ·  primary base: ${base}`);
 console.log(`${report.coins.length} coins analysed in ${Object.entries(report.timings).map(([k, v]) => `${k} ${(v / 1000).toFixed(1)}s`).join(', ')}`);
-console.log(`\n  buy candidates   ${s.buyCandidates.length}`);
-console.log(`  prefer BTC       ${s.preferBtc.length}`);
-console.log(`  dropped out      ${s.droppedOut.length}`);
+console.log(`\n  buitenkans       ${s.buitenkans.length}`);
+console.log(`  winst pakken     ${s.winstPakken.length}`);
+console.log(`  verkopen         ${s.verkopen.length}  -> ${report.btcInTrend ? 'to BTC' : 'to EUR'}`);
+console.log(`  houden           ${s.houden.length}`);
 console.log(`  owned            ${s.owned.length}`);
 
 console.log('\ntop 12 by score:');
 console.table(
-  report.coins.slice(0, 12).map((c) => ({
-    '#': c.rank,
-    coin: c.symbol,
-    close: c.closeUsd,
-    'chg%': c.changePct === null ? '-' : c.changePct.toFixed(1),
-    KijD: c.kijun.daily.verdict === 'above' ? 'Y' : c.kijun.daily.verdict === 'unknown' ? '?' : 'n',
-    KijW: c.kijun.weekly.verdict === 'above' ? 'Y' : c.kijun.weekly.verdict === 'unknown' ? '?' : 'n',
-    cloudD: c.cloud.daily.position,
-    cloudW: c.cloud.weekly.position,
-    ema: c.ema.map((e) => (e.state !== 'ok' ? '.' : e.verdict === 'above' ? 'Y' : 'n')).join(''),
-    'vsBTC': c.btc.coinBtcInTrend === null ? '?' : c.btc.coinBtcInTrend ? 'Y' : c.btc.preferBtc ? 'PREFER BTC' : 'n',
-    score: `${c.score.points.toFixed(0)}/${c.score.max.toFixed(0)}`,
-  })),
+  report.coins.slice(0, 12).map((c) => {
+    const p = primaryOf(c);
+    return {
+      '#': c.rank,
+      coin: c.symbol,
+      base: c.primaryBase,
+      close: c.closeUsd,
+      'chg%': c.changePct === null ? '-' : c.changePct.toFixed(1),
+      KijD: p.kijun.daily.verdict === 'above' ? 'Y' : p.kijun.daily.verdict === 'unknown' ? '?' : 'n',
+      KijW: p.kijun.weekly.verdict === 'above' ? 'Y' : p.kijun.weekly.verdict === 'unknown' ? '?' : 'n',
+      cloudD: p.cloud.daily.position,
+      cloudW: p.cloud.weekly.position,
+      ema: p.ema.map((e) => (e.state !== 'ok' ? '.' : e.verdict === 'above' ? 'Y' : 'n')).join(''),
+      bucket: c.bucket,
+      kans: c.opportunity.points,
+      winst: c.takeProfit.points,
+      score: `${c.score.points.toFixed(0)}/${c.score.max.toFixed(0)}`,
+    };
+  }),
 );
-console.log(`ema column order: ${report.coins[0]?.ema.map((e) => `${e.period}${e.timeframe[0]}`).join(' ') ?? '-'}`);
+console.log(`ema column order: ${primaryOf(report.coins[0]!).ema.map((e) => `${e.period}${e.timeframe[0]}`).join(' ')}`);
 
 if (report.universe.warnings.length > 0) {
   console.log('\nwarnings:');

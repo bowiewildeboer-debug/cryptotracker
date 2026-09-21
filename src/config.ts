@@ -22,10 +22,30 @@ export interface EmaConvergence {
   provisionalMaxRelError: number;
 }
 
+export interface LevelWeights {
+  kijun: Record<Timeframe, number>;
+  cloud: Record<Timeframe, number>;
+  ema: Record<Timeframe, number>;
+}
+
+export interface LevelParams {
+  /** How many CLOSED daily bars back a successful retest still counts. */
+  retestWindowDays: number;
+  /** A level overhead within this percentage of the close is 'approaching'. */
+  approachPct: number;
+  /** Multiplier applied to a first reclaim, versus a retest of an established level. */
+  reclaimFactor: number;
+  /** Below this the coin stays in `houden` rather than entering the Buitenkans bucket. */
+  minOpportunity: number;
+  /** Below this the coin stays in `houden` rather than entering the Winst pakken bucket. */
+  minTakeProfit: number;
+  weights: LevelWeights;
+}
+
 export interface ScoreWeights {
   kijunDaily: number;
   kijunWeekly: number;
-  coinBtcInTrend: number;
+  confirmation: number;
   cloudDaily: { above: number; in: number; below: number };
   cloudWeekly: { above: number; in: number; below: number };
   emaTotal: number;
@@ -58,6 +78,7 @@ export interface Params {
   timeframes: { kijun: Timeframe[]; cloud: Timeframe[] };
   universe: { targetSize: number; fetchSize: number };
   data: { maxDailyCandles: number; klineConcurrency: number };
+  levels: LevelParams;
   portfolio: PortfolioParams;
   score: ScoreWeights;
 }

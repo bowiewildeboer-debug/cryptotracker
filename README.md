@@ -4,6 +4,12 @@ Een persoonlijke crypto-trendwatcher. Elke ochtend een overzicht van de top 100 
 stablecoins), beoordeeld op jouw eigen Ichimoku-instellingen en EMA 21/55/100, met daarnaast
 twee meelopende portefeuillesimulaties.
 
+De basismetric is het **muntpaar tegen BTC**: elke munt wordt dubbel doorgerekend, op de
+dollarkoers én op de synthetische {munt}/BTC-koers. Staat bitcoin zelf boven zijn daily
+Kijun-sen, dan telt de BTC-set; staat hij eronder, dan de dollar-set. Elke munt valt daarna in
+precies één bakje — **Buitenkans**, **Winst pakken**, **Verkopen** of **Houden** — en de app
+legt in de Legenda uit wat elk daarvan betekent.
+
 * **Wat het meet en waarom** → [`docs/SPEC.md`](docs/SPEC.md)
 * **Waar we staan en hoe verder** → [`PROGRESS.md`](PROGRESS.md)
 * **Geverifieerde API-feiten** → [`docs/RESEARCH.md`](docs/RESEARCH.md)

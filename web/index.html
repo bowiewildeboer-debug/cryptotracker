@@ -19,10 +19,17 @@
     <button id="refresh" class="icon-btn" title="Opnieuw laden" aria-label="Opnieuw laden">&#x21bb;</button>
   </div>
   <div id="freshness" class="freshness" role="status">Laden&hellip;</div>
-  <div id="btc-line" class="btc-line"></div>
+  <div id="btc-line" class="btc-state" role="status"></div>
 </header>
 
 <nav class="tabs" id="tabs" role="tablist"></nav>
+<div class="basebar">
+  <div id="base-switch" class="segmented"></div>
+  <details id="legend" class="legend-box">
+    <summary>Legenda</summary>
+    <dl id="legend-body"></dl>
+  </details>
+</div>
 
 <main id="main">
   <div id="empty" class="empty">Even geduld, de gegevens worden opgehaald&hellip;</div>

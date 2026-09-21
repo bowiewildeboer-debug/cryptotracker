@@ -1,6 +1,6 @@
 import type { Candle } from '../types.ts';
 import { aggregate } from '../data/aggregate.ts';
-import { analyseCoin, type CoinInput, type CoinSignals, type MarketContext } from '../analysis/signals.ts';
+import { analyseCoin, primaryOf, type CoinInput, type CoinSignals, type MarketContext } from '../analysis/signals.ts';
 
 /**
  * Weekly and monthly reports.
@@ -52,10 +52,11 @@ export interface PeriodChange {
  * report is judged on that.
  */
 function periodVerdict(c: CoinSignals, tf: PeriodTimeframe): boolean | null {
+  const p = primaryOf(c);
   if (tf === 'weekly') {
-    return c.kijun.weekly.verdict === 'unknown' ? null : c.kijun.weekly.verdict === 'above';
+    return p.kijun.weekly.verdict === 'unknown' ? null : p.kijun.weekly.verdict === 'above';
   }
-  const cell = c.ema.find((e) => e.period === 21 && e.timeframe === 'monthly');
+  const cell = p.ema.find((e) => e.period === 21 && e.timeframe === 'monthly');
   if (!cell || (cell.verdict !== 'above' && cell.verdict !== 'below')) return null;
   return cell.verdict === 'above';
 }
@@ -112,9 +113,11 @@ export function buildPeriodicReport(
     }
 
     if (tf === 'weekly') {
-      const aboveNow = cur.cloud.weekly.position === 'above';
-      const aboveBefore = before.cloud.weekly.position === 'above';
-      if (aboveNow !== aboveBefore && cur.cloud.weekly.position !== 'unknown' && before.cloud.weekly.position !== 'unknown') {
+      const nowCloud = primaryOf(cur).cloud.weekly;
+      const beforeCloud = primaryOf(before).cloud.weekly;
+      const aboveNow = nowCloud.position === 'above';
+      const aboveBefore = beforeCloud.position === 'above';
+      if (aboveNow !== aboveBefore && nowCloud.position !== 'unknown' && beforeCloud.position !== 'unknown') {
         push(aboveNow ? 'entered-cloud-above' : 'left-cloud-above');
       }
     }

@@ -1,11 +1,19 @@
-import type { Candle, Timeframe } from '../types.ts';
+import type { Candle } from '../types.ts';
 import type { Params } from '../config.ts';
-import { emaCells } from '../config.ts';
-import { aggregate } from '../data/aggregate.ts';
 import { syntheticBtcRatio } from '../data/ratio.ts';
-import { ichimoku, cloudStateAt, type IchimokuSeries, type CloudState } from '../indicators/ichimoku.ts';
-import { ema } from '../indicators/ema.ts';
-import { compare, touched, type Verdict } from '../indicators/predicates.ts';
+import { compare, type Verdict } from '../indicators/predicates.ts';
+import {
+  buildMetricSet,
+  opportunityScore,
+  takeProfitScore,
+  type ExtraScore,
+  type MetricBase,
+  type MetricSet,
+  type CloudCellResult,
+  type EmaCellResult,
+  type KijunCellResult,
+  type LevelRef,
+} from './metrics.ts';
 
 /**
  * Turns one coin's daily candles into the full row of the report.
@@ -18,50 +26,29 @@ import { compare, touched, type Verdict } from '../indicators/predicates.ts';
  * "live" field so the app is still useful when opened in the evening; it never affects a
  * verdict, a score or a notification.
  *
- * Weekly and monthly series are built from the daily candles TRUNCATED AT C0. That keeps every
- * number in the row consistent with a single moment in time, and it is exactly what the
- * cross-timeframe questions need: "did yesterday's daily candle touch the weekly Kijun?" must
- * use the weekly Kijun as it stood at that day's close, not as it stands now.
+ * ## Two bases, one primary
+ *
+ * Every indicator is computed twice: once on the USD candles and once on the synthetic
+ * {coin}/BTC candles. Which of the two the app reports on is decided by BTC itself — see the
+ * module docs of `metrics.ts`. Both sets always travel in the report, so the front end can
+ * show either without a second run.
  */
 
-export interface EmaCellResult {
-  period: number;
-  timeframe: Timeframe;
-  value: number | null;
-  /** Upper bound on the seed-induced error of `value`, in price units. */
-  uncertainty: number | null;
-  /**
-   * How converged the EMA is. This drives DISPLAY only (a provisional value is greyed).
-   * Whether the cell can be scored is decided by `verdict`, which already has the
-   * uncertainty folded into its neutral band.
-   */
-  state: 'ok' | 'provisional' | 'na';
-  verdict: Verdict;
-  /** Did C0's daily candle touch this level? Bowie wants this for every EMA except daily-21. */
-  touchedByDaily: boolean;
-  bars: number;
-}
+export type { CloudCellResult, EmaCellResult, KijunCellResult, LevelRef, MetricBase, MetricSet };
 
-export interface KijunCellResult {
-  timeframe: Timeframe;
-  value: number | null;
-  verdict: Verdict;
-  touchedByDaily: boolean;
-  /** Daily only: was it above yesterday and not today? */
-  crossedBelowToday: boolean;
-  crossedAboveToday: boolean;
-}
+/**
+ * Which drawer the coin has landed in. This is the app's whole vocabulary: everything else
+ * is evidence for one of these four words.
+ */
+export type Bucket = 'buitenkans' | 'winst-pakken' | 'verkopen' | 'houden';
 
-export interface CloudCellResult extends CloudState {
-  timeframe: Timeframe;
-  /** The undisplaced reading, kept for reference; never drives the table or the score. */
-  noOffsetPosition: CloudState['position'];
-}
+/** Where the proceeds of a sale should go, when a coin lands in `verkopen`. */
+export type SellInto = 'btc' | 'eur';
 
 export interface BtcRelative {
   /** Is the {coin}/BTC series above its own daily Kijun? */
   coinBtcInTrend: boolean | null;
-  /** BTC is in trend but this coin is not beating it - Bowie would rather hold BTC. */
+  /** BTC is in trend but this coin is not beating it — Bowie would rather hold BTC. */
   preferBtc: boolean | null;
   kijun: number | null;
   close: number | null;
@@ -89,30 +76,46 @@ export interface CoinSignals {
   asOf: string;
   closeUsd: number;
   changePct: number | null;
-  live: { closeUsd: number; verdictVsDailyKijun: Verdict } | null;
+  live: { closeUsd: number; changePct: number | null; verdictVsDailyKijun: Verdict } | null;
 
-  kijun: { daily: KijunCellResult; weekly: KijunCellResult };
-  cloud: { daily: CloudCellResult; weekly: CloudCellResult };
-  ema: EmaCellResult[];
+  /** Indicators on the USD candles. */
+  usd: MetricSet;
+  /** Indicators on the synthetic {coin}/BTC candles. Null for BTC itself and for coins with no overlap. */
+  btcPair: MetricSet | null;
+  /** Which of the two the score, the bucket and the default view are built on. */
+  primaryBase: MetricBase;
+
+  /** Kept as a compact summary for the portfolio simulation and the notification. */
   btc: BtcRelative;
-  /** Undisplaced donchian(55) - the "auxiliary" line Bowie has on his chart but does not use. */
-  kijunAux: number | null;
 
+  bucket: Bucket;
+  /** Only set when `bucket === 'verkopen'`. */
+  sellInto: SellInto | null;
+  /** One sentence in Dutch explaining why the coin is in that bucket. */
+  bucketReason: string;
+
+  opportunity: ExtraScore;
+  takeProfit: ExtraScore;
+
+  /** `primary.inTrend` — kept as a top-level field because half the app asks for it. */
   inTrend: boolean;
   droppedOutToday: boolean;
   owned: boolean;
 
   score: ScoreResult;
-  dataQuality: { dailyBars: number; weeklyBars: number; monthlyBars: number; notes: string[] };
+  dataQuality: { dailyBars: number; weeklyBars: number; monthlyBars: number; btcPairBars: number; notes: string[] };
 }
 
 export interface MarketContext {
   params: Params;
-  /** BTC's daily candles, used for the synthetic ratio and for the preferBtc filter. */
+  /** BTC's daily candles, used for the synthetic ratio and for the base switch. */
   btcDaily: readonly Candle[];
   /** BTC's own coin id, so BTC is not compared against itself. */
   btcId: string;
-  /** Is BTC itself above its daily Kijun at C0? When false, rotating to BTC is no safe haven. */
+  /**
+   * Is BTC itself above its daily Kijun at C0? This one boolean decides the whole app's
+   * frame of reference: above, everything is measured against BTC; below, against dollars.
+   */
   btcInTrend: boolean;
   owned: ReadonlySet<string>;
 }
@@ -136,83 +139,9 @@ export function referenceIndex(daily: readonly Candle[]): number {
   return -1;
 }
 
-function lastOf<T>(arr: readonly T[]): T | undefined {
-  return arr[arr.length - 1];
-}
-
-function emaCell(
-  candles: readonly Candle[],
-  period: number,
-  timeframe: Timeframe,
-  refBar: Candle,
-  conv: Params['ema']['convergence'],
-): EmaCellResult {
-  const closes = candles.map((c) => c.close);
-  const r = ema(closes, period);
-  const value = lastOf(r.values) ?? null;
-  const refClose = lastOf(closes) ?? 0;
-
-  let state: EmaCellResult['state'] = 'na';
-  if (value !== null && r.uncertainty !== null && refClose > 0) {
-    const rel = r.uncertainty / refClose;
-    state = rel < conv.okMaxRelError ? 'ok' : rel < conv.provisionalMaxRelError ? 'provisional' : 'na';
-  }
-
-  return {
-    period,
-    timeframe,
-    value,
-    uncertainty: r.uncertainty,
-    state,
-    // Widen the neutral band by the EMA's own uncertainty: an unconverged EMA must never
-    // produce a confident verdict just because the numbers happen to differ.
-    verdict: compare(refClose, value, r.uncertainty ?? 0),
-    touchedByDaily: touched(refBar, value, r.uncertainty ?? 0),
-    bars: candles.length,
-  };
-}
-
-function kijunCell(
-  ich: IchimokuSeries,
-  candles: readonly Candle[],
-  timeframe: Timeframe,
-  refBar: Candle,
-  withCross: boolean,
-): KijunCellResult {
-  const i = candles.length - 1;
-  const value = ich.kijun[i] ?? null;
-  const refClose = candles[i]?.close ?? 0;
-
-  let crossedBelowToday = false;
-  let crossedAboveToday = false;
-  if (withCross && i >= 1) {
-    // Each bar is compared against ITS OWN Kijun. Applying today's level to yesterday's
-    // candle would invent crosses that never happened.
-    const prevAbove = compare(candles[i - 1]!.close, ich.kijun[i - 1] ?? null) === 'above';
-    const nowAbove = compare(refClose, value) === 'above';
-    crossedBelowToday = prevAbove && !nowAbove;
-    crossedAboveToday = !prevAbove && nowAbove;
-  }
-
-  return {
-    timeframe,
-    value,
-    verdict: compare(refClose, value),
-    touchedByDaily: touched(refBar, value),
-    crossedBelowToday,
-    crossedAboveToday,
-  };
-}
-
-function cloudCell(candles: readonly Candle[], ich: IchimokuSeries, timeframe: Timeframe): CloudCellResult {
-  const i = candles.length - 1;
-  const state = cloudStateAt(candles, ich, i);
-  const close = candles[i]!.close;
-  const noTop = ich.cloudTopNoOffset[i] ?? null;
-  const noBottom = ich.cloudBottomNoOffset[i] ?? null;
-  const noOffsetPosition =
-    noTop === null || noBottom === null ? 'unknown' : close > noTop ? 'above' : close < noBottom ? 'below' : 'in';
-  return { ...state, timeframe, noOffsetPosition };
+/** The metric set the score and the bucket are built on. */
+export function primaryOf(c: Pick<CoinSignals, 'usd' | 'btcPair' | 'primaryBase'>): MetricSet {
+  return c.primaryBase === 'btc' && c.btcPair ? c.btcPair : c.usd;
 }
 
 export function analyseCoin(coin: CoinInput, ctx: MarketContext): CoinSignals | null {
@@ -225,59 +154,42 @@ export function analyseCoin(coin: CoinInput, ctx: MarketContext): CoinSignals | 
   const c1 = base[idx - 1];
   const livePartial = coin.daily[idx + 1];
 
-  const dailyIch = ichimoku(base, params.ichimoku);
-  const weekly = aggregate(base, 'weekly');
-  const monthly = aggregate(base, 'monthly');
-  const weeklyIch = ichimoku(weekly, params.ichimoku);
-
   const notes: string[] = [];
   const minDailyBars = params.ichimoku.senkouB + params.ichimoku.displacement;
   if (base.length < minDailyBars) {
-    notes.push(`only ${base.length} daily candles; the daily cloud needs ${minDailyBars}`);
+    notes.push(`slechts ${base.length} dagcandles; de daily cloud heeft er ${minDailyBars} nodig`);
   }
+
+  const usd = buildMetricSet(base, params, 'usd');
+  if (!usd) return null;
 
   // --- {coin}/BTC, synthesised (see src/data/ratio.ts for why) ---
+  // BTC/BTC is 1.0 on every bar, so every one of its levels would sit exactly on the price
+  // and every verdict would read "at". BTC is therefore scored on dollars, always.
   const isBtc = coin.id === ctx.btcId;
-  // BTC/BTC is 1.0 on every bar, so its Kijun is 1.0 too and the comparison lands on "at",
-  // which would otherwise read as "not beating BTC" and wrongly flag BTC as preferBtc.
   const btcBase = ctx.btcDaily.slice(0, referenceIndex(ctx.btcDaily) + 1);
   const ratio = isBtc ? [] : syntheticBtcRatio(base, btcBase);
-  let btc: BtcRelative = { coinBtcInTrend: null, preferBtc: null, kijun: null, close: null, synthetic: true, bars: ratio.length };
-  if (ratio.length > 0) {
-    const rIch = ichimoku(ratio, params.ichimoku);
-    const j = ratio.length - 1;
-    const kij = rIch.kijun[j] ?? null;
-    const cl = ratio[j]!.close;
-    const inTrend = kij === null ? null : compare(cl, kij) === 'above';
-    btc = {
-      coinBtcInTrend: inTrend,
-      // Bowie's rule: coin/BTC below its Kijun while BTC itself is above its own -> hold BTC.
-      preferBtc: inTrend === null ? null : ctx.btcInTrend && !inTrend,
-      kijun: kij,
-      close: cl,
-      synthetic: true,
-      bars: ratio.length,
-    };
-  } else if (!isBtc) {
-    notes.push('no overlapping days with BTC, so the coin/BTC filter is unavailable');
-  }
+  const btcPair = ratio.length > 0 ? buildMetricSet(ratio, params, 'btc') : null;
+  if (!isBtc && !btcPair) notes.push('geen overlappende dagen met BTC, dus de BTC-basis ontbreekt');
 
-  const cells = emaCells(params).map((c) => {
-    const series = c.timeframe === 'daily' ? base : c.timeframe === 'weekly' ? weekly : monthly;
-    return emaCell(series, c.period, c.timeframe, c0, params.ema.convergence);
-  });
-
-  const kijun = {
-    daily: kijunCell(dailyIch, base, 'daily', c0, true),
-    weekly: kijunCell(weeklyIch, weekly, 'weekly', c0, false),
-  };
-  const cloud = {
-    daily: cloudCell(base, dailyIch, 'daily'),
-    weekly: cloudCell(weekly, weeklyIch, 'weekly'),
+  const btc: BtcRelative = {
+    coinBtcInTrend: btcPair ? btcPair.kijun.daily.verdict === 'above' : null,
+    // Bowie's rule: coin/BTC below its Kijun while BTC itself is above its own -> hold BTC.
+    preferBtc: btcPair ? ctx.btcInTrend && btcPair.kijun.daily.verdict !== 'above' : null,
+    kijun: btcPair?.kijun.daily.value ?? null,
+    close: btcPair?.close ?? null,
+    synthetic: true,
+    bars: ratio.length,
   };
 
-  const inTrend = kijun.daily.verdict === 'above';
-  const score = scoreCoin({ kijun, cloud, ema: cells, btc }, params);
+  const primaryBase: MetricBase = ctx.btcInTrend && btcPair ? 'btc' : 'usd';
+  const primary = primaryBase === 'btc' && btcPair ? btcPair : usd;
+
+  const opportunity = opportunityScore(primary, params);
+  const takeProfit = takeProfitScore(primary, params);
+  const { bucket, sellInto, bucketReason } = classify(primary, primaryBase, ctx.btcInTrend, opportunity, takeProfit, params);
+
+  const score = scoreCoin({ primary, other: primaryBase === 'btc' ? usd : btcPair }, params);
 
   return {
     id: coin.id,
@@ -290,23 +202,119 @@ export function analyseCoin(coin: CoinInput, ctx: MarketContext): CoinSignals | 
     closeUsd: c0.close,
     changePct: c1 && c1.close > 0 ? ((c0.close - c1.close) / c1.close) * 100 : null,
     live: livePartial
-      ? { closeUsd: livePartial.close, verdictVsDailyKijun: compare(livePartial.close, kijun.daily.value) }
+      ? {
+          closeUsd: livePartial.close,
+          changePct: c0.close > 0 ? ((livePartial.close - c0.close) / c0.close) * 100 : null,
+          verdictVsDailyKijun: compare(livePartial.close, usd.kijun.daily.value),
+        }
       : null,
 
-    kijun,
-    cloud,
-    ema: cells,
+    usd,
+    btcPair,
+    primaryBase,
     btc,
-    kijunAux: dailyIch.kijunAux[idx] ?? null,
 
-    inTrend,
-    droppedOutToday: kijun.daily.crossedBelowToday,
+    bucket,
+    sellInto,
+    bucketReason,
+    opportunity,
+    takeProfit,
+
+    inTrend: primary.inTrend,
+    droppedOutToday: primary.kijun.daily.crossedBelowToday,
     owned: ctx.owned.has(coin.symbol.toUpperCase()),
 
     score,
-    dataQuality: { dailyBars: base.length, weeklyBars: weekly.length, monthlyBars: monthly.length, notes },
+    dataQuality: {
+      dailyBars: usd.bars.daily,
+      weeklyBars: usd.bars.weekly,
+      monthlyBars: usd.bars.monthly,
+      btcPairBars: ratio.length,
+      notes,
+    },
   };
 }
+
+/* ------------------------------------------------------------------ buckets */
+
+const BASE_WORD: Record<MetricBase, string> = { usd: 'in dollars', btc: 'tegen BTC' };
+
+/**
+ * The four drawers.
+ *
+ * Order matters and is not arbitrary. Falling through the daily Kijun overrides everything —
+ * no retest is worth anything once the trend line is gone. Above it, a coin can genuinely be
+ * both a fresh entry and close to resistance at the same time, so the stronger of the two
+ * scores decides, with a tie going to `buitenkans`.
+ *
+ * Both extra scores have to clear a floor first. Some level is almost always within a few
+ * percent of some price, so without a minimum the two interesting drawers would hold most of
+ * the market and `houden` would be empty — the exact opposite of what they are for.
+ */
+function classify(
+  primary: MetricSet,
+  base: MetricBase,
+  btcInTrend: boolean,
+  opportunity: ExtraScore,
+  takeProfit: ExtraScore,
+  params: Params,
+): { bucket: Bucket; sellInto: SellInto | null; bucketReason: string } {
+  const where = BASE_WORD[base];
+  const kans = opportunity.points >= params.levels.minOpportunity ? opportunity.points : 0;
+  const winst = takeProfit.points >= params.levels.minTakeProfit ? takeProfit.points : 0;
+
+  if (primary.kijun.daily.verdict === 'below') {
+    // When BTC still holds its own Kijun it is the safer place to stand; when it does not,
+    // there is nothing left to rotate into and the exit is to euros.
+    const sellInto: SellInto = btcInTrend ? 'btc' : 'eur';
+    return {
+      bucket: 'verkopen',
+      sellInto,
+      bucketReason:
+        `Onder de daily Kijun-sen ${where}. ` +
+        (sellInto === 'btc'
+          ? 'BTC staat zelf nog boven zijn Kijun, dus verkoop naar BTC.'
+          : 'BTC staat zelf ook onder zijn Kijun, dus verkoop naar euro.'),
+    };
+  }
+
+  if (primary.kijun.daily.verdict !== 'above') {
+    return {
+      bucket: 'houden',
+      sellInto: null,
+      bucketReason: `Er is nog geen daily Kijun-sen ${where} om tegen af te meten.`,
+    };
+  }
+
+  if (kans > 0 && kans >= winst) {
+    const top = opportunity.contributions[0]!;
+    return {
+      bucket: 'buitenkans',
+      sellInto: null,
+      bucketReason: `Boven de daily Kijun-sen ${where}, met een ${top.detail} op ${top.label}.`,
+    };
+  }
+
+  if (winst > 0) {
+    const top = takeProfit.contributions[0]!;
+    return {
+      bucket: 'winst-pakken',
+      sellInto: null,
+      bucketReason: `Boven de daily Kijun-sen ${where}, maar loopt tegen ${top.label} aan — ${top.detail}.`,
+    };
+  }
+
+  return {
+    bucket: 'houden',
+    sellInto: null,
+    bucketReason:
+      opportunity.points > 0 || takeProfit.points > 0
+        ? `Boven de daily Kijun-sen ${where}. Er is wel wat beweging rond de niveaus, maar te weinig om een bakje te rechtvaardigen.`
+        : `Boven de daily Kijun-sen ${where}, zonder verse test of niveau in de buurt.`,
+  };
+}
+
+/* ------------------------------------------------------------------ score */
 
 /**
  * Split `total` into `n` parts of whole cents that sum back to exactly `total`.
@@ -320,19 +328,24 @@ function distribute(total: number, n: number): number[] {
   return Array.from({ length: n }, () => (base + (left-- > 0 ? 1 : 0)) / 100);
 }
 
-interface ScoreInput {
-  kijun: { daily: KijunCellResult; weekly: KijunCellResult };
-  cloud: { daily: CloudCellResult; weekly: CloudCellResult };
-  ema: EmaCellResult[];
-  btc: BtcRelative;
+export interface ScoreInput {
+  /** The series in charge: {coin}/BTC while BTC is in trend, USD otherwise. */
+  primary: MetricSet;
+  /** The other one, worth 20 points as confirmation. Null when it does not exist. */
+  other: MetricSet | null;
 }
 
 /**
  * Fully additive so any total can be traced back to the cells that produced it.
  *
- * A cell that cannot be judged - no history, or an EMA too unconverged to give a verdict -
+ * A cell that cannot be judged — no history, or an EMA too unconverged to give a verdict —
  * scores nothing AND is removed from the maximum, so a young coin is neither silently
  * rewarded nor silently punished for data it could not have.
+ *
+ * Every cell here is read off the PRIMARY series. The one exception is `confirmation`: the
+ * daily Kijun of the other base, which is what separates a coin that is winning against both
+ * bitcoin and the dollar from one that is only winning against whichever happens to be in
+ * charge today.
  */
 export function scoreCoin(s: ScoreInput, params: Params): ScoreResult {
   const w = params.score;
@@ -345,23 +358,31 @@ export function scoreCoin(s: ScoreInput, params: Params): ScoreResult {
     breakdown.push({ label, got: counted ? round2(got) : 0, of: round2(of), counted });
   };
 
-  add('Kijun daily', s.kijun.daily.verdict === 'above' ? w.kijunDaily : 0, w.kijunDaily, s.kijun.daily.verdict !== 'unknown');
-  add('Kijun weekly', s.kijun.weekly.verdict === 'above' ? w.kijunWeekly : 0, w.kijunWeekly, s.kijun.weekly.verdict !== 'unknown');
-  add('coin/BTC above Kijun', s.btc.coinBtcInTrend ? w.coinBtcInTrend : 0, w.coinBtcInTrend, s.btc.coinBtcInTrend !== null);
+  const p = s.primary;
+  add('Kijun daily', p.kijun.daily.verdict === 'above' ? w.kijunDaily : 0, w.kijunDaily, p.kijun.daily.verdict !== 'unknown');
+  add('Kijun weekly', p.kijun.weekly.verdict === 'above' ? w.kijunWeekly : 0, w.kijunWeekly, p.kijun.weekly.verdict !== 'unknown');
+
+  const otherKijun = s.other?.kijun.daily;
+  add(
+    'confirmation',
+    otherKijun?.verdict === 'above' ? w.confirmation : 0,
+    w.confirmation,
+    otherKijun !== undefined && otherKijun.verdict !== 'unknown',
+  );
 
   const cloudPoints = (pos: CloudCellResult['position'], t: { above: number; in: number; below: number }) =>
     pos === 'above' ? t.above : pos === 'in' ? t.in : 0;
-  add('Cloud daily', cloudPoints(s.cloud.daily.position, w.cloudDaily), w.cloudDaily.above, s.cloud.daily.position !== 'unknown');
-  add('Cloud weekly', cloudPoints(s.cloud.weekly.position, w.cloudWeekly), w.cloudWeekly.above, s.cloud.weekly.position !== 'unknown');
+  add('Cloud daily', cloudPoints(p.cloud.daily.position, w.cloudDaily), w.cloudDaily.above, p.cloud.daily.position !== 'unknown');
+  add('Cloud weekly', cloudPoints(p.cloud.weekly.position, w.cloudWeekly), w.cloudWeekly.above, p.cloud.weekly.position !== 'unknown');
 
   // Six cells sharing 20 points is 3.333... each, which does not survive rounding to cents.
   // Distribute the remainder instead, so the printed columns really do add up to the total.
-  const shares = distribute(w.emaTotal, s.ema.length);
-  s.ema.forEach((cell, i) => {
+  const shares = distribute(w.emaTotal, p.ema.length);
+  p.ema.forEach((cell, i) => {
     const of = shares[i] ?? 0;
     // Counted whenever the verdict is DEFINITE. `compare` already widened its neutral band by
     // the EMA's own uncertainty, so an "above" here means above even under the worst-case
-    // seed - demanding full convergence on top of that would drop cells whose answer is not
+    // seed — demanding full convergence on top of that would drop cells whose answer is not
     // actually in doubt, and empty most of the monthly column for no gain.
     const decided = cell.verdict === 'above' || cell.verdict === 'below';
     add(`EMA${cell.period} ${cell.timeframe}`, cell.verdict === 'above' ? of : 0, of, decided);

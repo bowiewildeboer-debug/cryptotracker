@@ -325,24 +325,63 @@ The job runs at 01:17 UTC, so today's daily candle is ~1 hour old and meaningles
 
 ---
 
-## 7. The BTC-relative filter
+## 7. The base currency: {coin}/BTC is the primary series
 
-Bowie's own words: *"Als het tradingpaar {coin}/btc nog onder de kijun-sen daily zit maar btc
-zelf zit wél boven de daily kijun-sen, dan zit ik liever in btc."*
+Bowie's own words: *"Ik vind het waardevoller om direct te zien hoe het t.o.v. BTC doet wanneer
+BTC boven zijn Kijun daily zit. Muntpaar tegen BTC boven zijn Kijun is voor mij de basismetric
+van de gehele app. Als BTC onder de Kijun zit dan is het goed om naar USDT Kijun daily te
+kijken."*
+
+So **every** indicator is computed twice, on two complete price series:
+
+| Set | Series | Built by |
+|---|---|---|
+| `usd` | the coin's USDT candles | Binance, §4.1 |
+| `btcPair` | the synthetic `{coin}/BTC` candles | §4.4 |
+
+Both carry the same cells: Kijun daily + weekly, cloud daily + weekly, the six EMA cells, and
+the derived level list of §7.1. Which of the two is authoritative is decided by BTC itself:
 
 ```
-btcInTrend      = above(BTCUSDT.C0, BTCUSDT.kijunD)
-coinBtcInTrend  = above(COINBTC.C0,  COINBTC.kijunD)         // synthetic series, §4.4
-
-preferBtc       = btcInTrend && !coinBtcInTrend
-outperformsBtc  = coinBtcInTrend
+btcInTrend   = above(BTCUSDT.C0, BTCUSDT.kijunD)
+primaryBase  = (btcInTrend && btcPair exists) ? 'btc' : 'usd'
 ```
 
-`preferBtc` demotes a coin into its own report section — it is not removed, because Bowie still
-wants to see it. For BTC itself both flags are `null`.
+* **BTC above its own daily Kijun** → the BTC set leads. Rotating into BTC is a real
+  alternative, so an altcoin has to beat it to be worth owning.
+* **BTC below its own daily Kijun** → the USD set leads. Beating a falling bitcoin is no
+  achievement; the only question left is whether the coin holds up in money.
 
-When `btcInTrend` is **false** (BTC itself is below its daily Kijun) the filter is inactive and
-the report says so in one line at the top; in that regime rotating to BTC is not a safe haven.
+The score (§8.4), the bucket (§8.2) and the app's default view all read the primary set. For
+BTC itself `btcPair` is `null` — BTC/BTC is 1.0 on every bar, so every level would sit exactly
+on the price — and it is therefore always scored on dollars.
+
+The old `preferBtc` flag survives only as a compact summary for the portfolio simulation and
+the notification; it no longer drives a section of its own.
+
+### 7.1 Levels, retests and approaches
+
+A **level** is any single comparable price line of a metric set:
+
+`kijun-daily`, `kijun-weekly`, `cloudtop-{daily,weekly}`, `cloudbot-{daily,weekly}`, and one
+per EMA cell. Cloud top and bottom are separate levels on purpose: coming down, the top is the
+support that gets retested; coming up, the bottom is the first resistance met.
+
+Each level carries a **weight** (`config/params.json → levels.weights`), a value, a verdict, and
+`gapPct` — how far the close has to move to reach it, positive when the level is overhead.
+
+**Retest.** Within `levels.retestWindowDays` (3) closed daily bars, a level was successfully
+tested when some bar's *range* reached it **and** that same bar *closed above* it. A wick
+through the line that closed below is a failed test and never registers. The level must still
+be below the price now, or the "successful" test was not successful after all.
+
+Each bar is evaluated against the level **as it stood on that bar** — weekly and monthly series
+are rebuilt from the daily candles truncated at that day, never sliced off the current ones.
+A test is a `retest` when the previous bar was already above the level, and a `reclaim` when it
+was not; a reclaim is worth `levels.reclaimFactor` (0.75) of a retest.
+
+**Approach.** A level is *approaching* when it sits overhead within `levels.approachPct` (3%)
+of the close, or when the reference candle already tapped it from below.
 
 ---
 
@@ -350,30 +389,56 @@ the report says so in one line at the top; in that regime rotating to BTC is not
 
 ### 8.1 Row inclusion — daily report
 
-A coin appears if **any** of:
+Every analysed coin is in the report. What differs is which **bucket** it lands in, and which
+tab therefore shows it.
 
-* **A. In trend** — `above(C0, kijunD)`
-* **B. Dropped out** — `crossedBelowToday` on the daily Kijun
-* **C. Owned** — listed in `config/holdings.json`, regardless of state
+### 8.2 Buckets
 
-### 8.2 Sections
+Every coin sits in exactly one bucket, decided on the **primary** metric set (§7).
 
-| # | Section | Contents |
+| Bucket | Condition | Meaning |
 |---|---|---|
-| 1 | 🟢 **Koopkandidaten** | A, not `preferBtc` — sorted by score desc |
-| 2 | 🟠 **In trend, maar liever BTC** | A and `preferBtc` — sorted by score desc |
-| 3 | 🔴 **Vandaag uitgevallen** | B — was above the daily Kijun yesterday, is not today |
-| 4 | 💼 **Mijn posities** | C — always, with its own state, whatever it is |
+| 🔴 **Verkopen** | daily Kijun verdict is `below` | Out. `sellInto = btc` while BTC itself is above its own daily Kijun, otherwise `eur`. |
+| 🟢 **Buitenkans** | above the daily Kijun, and `opportunityScore ≥ levels.minOpportunity` | A level was genuinely tested and held. Entry. |
+| 🟠 **Winst pakken** | above the daily Kijun, and `takeProfitScore ≥ levels.minTakeProfit` | The price is running into resistance from below. |
+| ⚪ **Houden** | anything else above the daily Kijun | Nothing to do. |
 
-A coin in section 3 or 4 is not repeated in 1 or 2.
+Order matters: losing the daily Kijun overrides everything, because no retest is worth
+anything once the trend line is gone. Above it a coin can genuinely be both a fresh entry and
+close to resistance, so the higher of the two extra scores decides, with a tie going to
+**Buitenkans**.
+
+Both extra scores must clear a floor (default 20). Some level is almost always within a few
+percent of some price, so without a minimum the two interesting drawers would hold most of the
+market and **Houden** would be empty — the exact opposite of what they are for.
+
+Alongside the buckets the report keeps two cross-cutting lists: `buyCandidates` (above the
+daily Kijun and not owned) and `owned`.
+
+#### The two extra scores
+
+Both are 0–100, capped, and fully itemised so the app can show what produced them.
+
+```
+opportunityScore = Σ over retested levels of  weight × (W − barsAgo)/W × kindFactor
+takeProfitScore  = Σ over overhead levels of  weight × proximity
+                   proximity = 1 when the reference candle already tapped it,
+                               else max(0, 1 − gapPct / approachPct)
+```
+
+`W` is `levels.retestWindowDays`; `kindFactor` is 1 for a retest and `reclaimFactor` for a
+reclaim. Several levels tested at once is the real signal, so contributions add up.
 
 ### 8.3 Columns
+
+All cells are read off whichever metric set is on screen — the primary one by default, or the
+one the base switch forces.
 
 | Column | Content |
 |---|---|
 | `#` | CMC / CoinGecko market-cap rank |
 | Coin | symbol + name |
-| Prijs | `C0.close`, 24h % change |
+| Koers | `C0.close` of the shown base (8 decimals under BTC), 24h % change in USD |
 | **Kijun D** | ✓/✗ above · `•` if `C0` touched it · `↓` if crossed below today |
 | **Kijun W** | ✓/✗ above (provisional badge) · `•` if `C0` touched the weekly Kijun |
 | **Cloud D** | `▲` above / `≈` in / `▼` below · `⌃`/`⌄` if `C0` touched top/bottom · S/R label |
@@ -384,26 +449,36 @@ A coin in section 3 or 4 is not repeated in 1 or 2.
 | **EMA55 W** | ✓/✗/~/– · `•` if `C0` touched it |
 | **EMA100 D** | ✓/✗/~/– · `•` if `C0` touched it |
 | **EMA100 W** | ✓/✗/~/– · `•` if `C0` touched it |
-| **vs BTC** | ✓ outperforms / ⚠ prefer BTC · `(syn)` when the pair is synthetic |
+| **ook in $ / ook vs BTC** | the daily Kijun verdict of the OTHER base — the score's confirmation cell |
+| **Bakje** | the bucket badge (§8.2), on the Posities, Koopkandidaten and Alles tabs |
+| **Kans / Winst** | the relevant extra score, on the Buitenkans and Winst pakken tabs |
 | **Score** | 0–100 (§8.4) with "n pts n/a" annotation |
-| Live | greyed current-price state vs daily Kijun |
 
 The "touched an EMA" signal covers exactly the six used cells — the daily EMA21 is excluded,
 as Bowie specified, because he does not use it.
 
+The auxiliary Donchian(55) line is computed inside the Ichimoku series (it is one of the
+selectable Senkou A sources) but is **not** in the report: it drove nothing and only added a
+row to the detail panel.
+
 ### 8.4 Score
 
-Transparent and fully additive, so any cell can be traced back from the total.
+Transparent and fully additive, so any cell can be traced back from the total. Every cell is
+read off the **primary** metric set (§7).
 
 | Component | Points |
 |---|---:|
 | Above daily Kijun | 25 |
 | Above weekly Kijun | 15 |
-| `coinBtcInTrend` (above daily Kijun on the BTC pair) | 20 |
+| `confirmation` — above the daily Kijun of the OTHER base | 20 |
 | Cloud daily: above 12 / in 4 / below 0 | 12 |
 | Cloud weekly: above 8 / in 3 / below 0 | 8 |
 | Each of the 6 EMA cells above (3.33 each) | 20 |
 | **Total** | **100** |
+
+`confirmation` is what separates a coin winning against both bitcoin and the dollar from one
+winning only against whichever base happens to be in charge today. For BTC itself it is
+unavailable and its 20 points leave the denominator.
 
 `provisional` and `na` cells score **0** and their maximum is subtracted from the denominator,
 which is reported as `score 72/100 (8 n.v.t.)`. A coin is never silently rewarded or punished
@@ -442,7 +517,19 @@ A static PWA, installable on iPhone/Android and on the Windows laptop, reading t
 artefacts. Requirements:
 
 * Readable on a phone: the wide table collapses into per-coin cards below 720px.
-* Sections from §8.2 as tabs/anchors; sort and filter client-side.
+* Buckets from §8.2 as tabs, plus Koopkandidaten, Mijn posities, Portefeuille and Alles;
+  sort and filter client-side. Every row and card shows its bucket badge on the tabs where
+  that is not already implied by the tab itself.
+* A **BTC state band** directly under the title, saying in one line whether BTC is above its
+  own daily Kijun, which base everything is therefore measured against, and where the proceeds
+  of a sale should go.
+* A **base switch** (Automatisch / Tegen BTC / In dollars) that overrides `primaryBase`
+  client-side, since the report always carries both sets. A row shown on a base the report did
+  not score it on is marked.
+* A **Legenda** panel explaining the base metric, the buckets, both extra scores and every
+  glyph — so "muntpaar tegen BTC boven zijn Kijun" never has to be remembered.
+* A coin's detail panel lists **every level** with its value and the percentage the close has
+  to move to reach it, including the still-forming "Nu" candle.
 * A prominent **"data van <timestamp> UTC"** badge — GitHub cron drifts 5–30 minutes and can
   skip a run; stale data must never look fresh.
 * Holdings (§8.1 C) editable in the app and persisted, so no code change is needed to mark a
@@ -460,8 +547,9 @@ npm package at the end of the job.
 The notifier is an interface with one implementation today; Telegram and e-mail are documented
 in `docs/RESEARCH.md` and can be added as extra implementations without touching the pipeline.
 
-Push payload: short summary (number of buy candidates, number of dropouts, top 3 by score) plus
-a deep link into the app. Known constraint: on iOS the PWA must be added to the Home Screen
+Push payload: short summary (how many Buitenkans, Verkopen and Winst pakken, the top 3
+Buitenkans by score, and — always — whether BTC is above its own Kijun, because that single
+line decides where the proceeds of every sale go) plus a deep link into the app. Known constraint: on iOS the PWA must be added to the Home Screen
 first. Full mechanics: see the web-push section of `docs/RESEARCH.md`.
 
 ---

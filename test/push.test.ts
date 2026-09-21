@@ -9,7 +9,7 @@ function report(over: Partial<Report> = {}): Report {
     params: {} as Report['params'],
     btcInTrend: true,
     coins: [],
-    sections: { buyCandidates: [], preferBtc: [], droppedOut: [], owned: [] },
+    sections: { buitenkans: [], winstPakken: [], verkopen: [], houden: [], buyCandidates: [], owned: [] },
     universe: { size: 100, excluded: [], warnings: [] },
     portfolio: null,
     periodic: {},
@@ -19,23 +19,23 @@ function report(over: Partial<Report> = {}): Report {
 }
 
 const coin = (symbol: string, over: Record<string, unknown> = {}) =>
-  ({ symbol, inTrend: true, btc: { preferBtc: false }, ...over }) as unknown as Report['coins'][number];
+  ({ symbol, inTrend: true, bucket: 'buitenkans', ...over }) as unknown as Report['coins'][number];
 
 describe('buildPayload', () => {
   it('carries a headline and a link, never the table', () => {
     const p = JSON.parse(
       buildPayload(
         report({
-          sections: { buyCandidates: ['A', 'B'], preferBtc: ['C'], droppedOut: ['D'], owned: [] },
+          sections: { buitenkans: ['A', 'B'], winstPakken: ['C'], verkopen: ['D'], houden: [], buyCandidates: ['A', 'B'], owned: [] },
           coins: [coin('AAA'), coin('BBB'), coin('CCC'), coin('DDD')],
         }),
         'https://example.test/tracker/',
       ),
     );
     expect(p.notification.title).toContain('2026-09-20');
-    expect(p.notification.title).toContain('2 koopkandidaten');
-    expect(p.notification.body).toContain('1 uitgevallen');
-    expect(p.notification.body).toContain('1x liever BTC');
+    expect(p.notification.title).toContain('2 buitenkans');
+    expect(p.notification.body).toContain('1 verkopen');
+    expect(p.notification.body).toContain('1x winst pakken');
     expect(p.notification.navigate).toBe('https://example.test/tracker/');
     // At most three names, so the body cannot grow with the market.
     expect(p.notification.body).toContain('AAA, BBB, CCC');
@@ -46,16 +46,20 @@ describe('buildPayload', () => {
     expect(JSON.parse(buildPayload(report(), './')).web_push).toBe(8030);
   });
 
-  it('says so when BTC itself is below its Kijun', () => {
-    const p = JSON.parse(buildPayload(report({ btcInTrend: false }), './'));
-    expect(p.notification.body).toContain('BTC onder zijn Kijun');
+  it('always says where the proceeds of a sale should go', () => {
+    expect(JSON.parse(buildPayload(report({ btcInTrend: false }), './')).notification.body).toContain(
+      'BTC onder zijn Kijun — verkoop naar euro',
+    );
+    expect(JSON.parse(buildPayload(report({ btcInTrend: true }), './')).notification.body).toContain(
+      'BTC boven zijn Kijun — verkoop naar BTC',
+    );
   });
 
   it('stays far below the 3993-byte ceiling even with a full top 100', () => {
     const many = Array.from({ length: 100 }, (_, i) => `SYM${i}`);
     const payload = buildPayload(
       report({
-        sections: { buyCandidates: many, preferBtc: many, droppedOut: many, owned: many },
+        sections: { buitenkans: many, winstPakken: many, verkopen: many, houden: many, buyCandidates: many, owned: many },
         coins: many.map((s) => coin(s)),
       }),
       'https://example.test/tracker/?d=2026-09-20',

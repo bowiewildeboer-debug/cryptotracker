@@ -57,10 +57,26 @@
       "rebalance": { "onSetChange": true, "weekly": true }
     }
   },
+  "levels": {
+    "$comment": "Drives the Buitenkans and Winst pakken tabs. A level counts as retested when a candle's range reached it and that candle still closed above it; as approaching when the level sits overhead within approachPct of the close.",
+    "retestWindowDays": 3,
+    "approachPct": 3,
+    "reclaimFactor": 0.75,
+    "minOpportunity": 20,
+    "minTakeProfit": 20,
+    "$minNote": "Below these a coin stays in 'houden'. Without them a three-day-old tap of a weekly EMA (4 points) would fill the Buitenkans tab with half the market and the word would stop meaning anything. 20 is roughly 'a daily Kijun or cloud was genuinely tested, or several lighter levels were'.",
+    "$reclaimFactorNote": "A first reclaim of a level counts for less than a retest of one the price was already above.",
+    "weights": {
+      "kijun": { "daily": 40, "weekly": 30, "monthly": 0 },
+      "cloud": { "daily": 20, "weekly": 15, "monthly": 0 },
+      "ema": { "daily": 15, "weekly": 12, "monthly": 12 }
+    }
+  },
   "score": {
+    "$comment": "Scored on the PRIMARY series: {coin}/BTC while BTC is above its own daily Kijun, USD otherwise. 'confirmation' is the daily Kijun of the OTHER series, so a coin that wins on both bases outscores one that only wins on the base currently in charge.",
     "kijunDaily": 25,
     "kijunWeekly": 15,
-    "coinBtcInTrend": 20,
+    "confirmation": 20,
     "cloudDaily": { "above": 12, "in": 4, "below": 0 },
     "cloudWeekly": { "above": 8, "in": 3, "below": 0 },
     "emaTotal": 20

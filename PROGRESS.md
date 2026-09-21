@@ -3,7 +3,7 @@
 > **Dit is het enige bestand dat je hoeft te lezen om verder te gaan waar we gebleven waren.**
 > Lees daarna alleen de doc's die de openstaande chunk noemt. Niet de hele codebase inlezen.
 
-Laatst bijgewerkt: **2026-09-21** · Sessie 1
+Laatst bijgewerkt: **2026-09-21** · Sessie 2
 
 🟢 **Live:** https://bowiewildeboer-debug.github.io/cryptotracker/
 📦 **Repo:** https://github.com/bowiewildeboer-debug/cryptotracker (publiek)
@@ -16,6 +16,12 @@ Laatst bijgewerkt: **2026-09-21** · Sessie 1
 Een persoonlijke crypto **trendwatcher** voor Bowie. Elke dag (+ wekelijks/maandelijks) een
 rapport met de CMC top-100 (excl. stablecoins), beoordeeld op een **eigen Ichimoku-setup** en
 **EMA 21/55/100**, met als doel: welke munten staan er technisch gunstig bij om te kopen.
+
+**De basismetric is het muntpaar tegen BTC.** Elke munt wordt volledig dubbel doorgerekend:
+een keer op de dollarkoers en een keer op de synthetische {munt}/BTC-koers. Staat BTC zelf
+boven zijn daily Kijun-sen, dan is de BTC-set leidend voor score en bakje; staat BTC eronder,
+dan de dollar-set. Elke munt valt in precies een van vier bakjes: **Buitenkans**,
+**Winst pakken**, **Verkopen** of **Houden**.
 
 Daarnaast lopen er **twee gesimuleerde portefeuilles** mee, beide gestart met €10.000 op
 2026-09-20: een HODL-benchmark (alles kopen naar marktcap, nooit meer aanraken) en de strategie
@@ -87,7 +93,8 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | 7 | Web Push notificaties | ✅ klaar | `src/notify/push.ts`, `web/push.js`, `scripts/send-push.ts` |
 | 8 | GitHub Actions: cron + deploy | ✅ klaar | `.github/workflows/daily.yml`, `README.md` |
 | 8b | Publiceren: repo, Pages, secrets, eerste run | ✅ klaar | Live, eerste twee dagen data binnen |
-| 9 | Validatie tegen jouw TradingView-chart | 🟡 volgende | Handmatige check van 5 munten |
+| 9 | BTC-basis, vier bakjes, legenda | ✅ klaar | `src/analysis/metrics.ts`, herbouwde `signals.ts` en `web/app.js` |
+| 10 | Validatie tegen jouw TradingView-chart | 🟡 volgende | Handmatige check van 5 munten |
 
 ---
 
@@ -118,12 +125,14 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | J | Repo-groei door dagelijks een groot bestand te committen | — | ✅ **opgelost** — `latest.json` wordt niet meer gecommit maar direct naar Pages gepubliceerd; alleen de dagsnapshots (~11 KB) gaan de repo in |
 | K | Eerste live run | — | ✅ **klaar** — draait, 100 munten, ~35 s per run |
 | L | Meldingen koppelen op je Android-toestel | — | ❓ **actie voor Bowie** — app op beginscherm, dan stap 5 uit `README.md` |
+| M | Drempel voor Buitenkans / Winst pakken | — | 🟡 **afstelbaar** — staat op 20 in `config/params.json`. Bij 0 vulde Buitenkans zich met 45 van de 100 munten; bij 20 zijn het er 38 en zit er niets meer in op een drie dagen oude tik van een weekly EMA. Als het nog te veel voelt: hoger zetten, of `retestWindowDays` naar 2 |
+| N | Auxiliary (55) uit de uitvoer | — | ✅ **gedaan** — de lijn wordt nog wel binnen Ichimoku berekend (het is een van de keuzes voor Senkou A), maar staat niet meer in `latest.json` of in de app |
 
 ---
 
 ## 7. Werk in uitvoering
 
-_Chunk 9_ — validatie tegen Bowie's eigen TradingView-chart. Dit is de laatste stap en
+_Chunk 10_ — validatie tegen Bowie's eigen TradingView-chart. Dit is de laatste stap en
 alleen Bowie kan hem zetten: hij leest voor 3–5 munten de Kijun-sen, de cloudgrenzen en één
 EMA van zijn scherm, en die leggen we naast `data/latest.json`.
 
@@ -206,3 +215,20 @@ Niets half-af achtergelaten.
   Opnieuw gezet via stdin; tweede run geslaagd.
   Let op: lokaal gaf de foute sleutel gewoon HTTP 200 — CoinGecko is alleen streng vanaf
   datacenter-IP's. Zo'n fout is dus niet lokaal te reproduceren.
+- **2026-09-21 s2** — **Grote herziening: BTC is de basis geworden.** Elke munt wordt nu dubbel
+  doorgerekend — dezelfde Kijun, cloud en EMA's op de dollarkoers én op de synthetische
+  {munt}/BTC-koers — en welke van de twee telt, hangt af van BTC zelf. Beide sets zitten altijd
+  in `latest.json`, dus de knop "Tegen BTC / In dollars" in de app schakelt zonder nieuwe run.
+  De score meet nu op de leidende basis, met 20 punten "bevestiging" als de munt óók op de
+  andere basis boven zijn daily Kijun staat — dat onderscheidt een munt die zowel bitcoin als
+  de dollar verslaat van een die alleen wint op de basis die vandaag toevallig geldt.
+  Nieuw: drie bakjes-tabbladen (Buitenkans / Winst pakken / Verkopen) met een eigen kans- en
+  winstscore, een legenda, een BTC-balk in de kop, en een niveautabel per munt met het
+  percentage dat de koers moet bewegen om elk niveau te raken. "Liever BTC" en "Uitgevallen"
+  zijn vervallen, en de Auxiliary (55) staat niet meer in de uitvoer.
+  Eén ding pas zichtbaar geworden door het écht te draaien: zonder ondergrens vulde Buitenkans
+  zich met 45 van de 100 munten, omdat er altijd wel íets binnen een paar procent van een koers
+  ligt. Vandaar `minOpportunity` / `minTakeProfit` op 20 (open punt M).
+  Analyse werd 6x zwaarder (vier momentopnamen per basis, om "raakte hij de weekly Kijun drie
+  dagen geleden?" te kunnen beantwoorden met de weekly Kijun van die dag) en duurt nu 2,4 s in
+  plaats van 0,2 s — ruim binnen de marge van een nachtrun van ~35 s.
