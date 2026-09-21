@@ -3,7 +3,11 @@
 > **Dit is het enige bestand dat je hoeft te lezen om verder te gaan waar we gebleven waren.**
 > Lees daarna alleen de doc's die de openstaande chunk noemt. Niet de hele codebase inlezen.
 
-Laatst bijgewerkt: **2026-09-20** · Sessie 1
+Laatst bijgewerkt: **2026-09-21** · Sessie 1
+
+🟢 **Live:** https://bowiewildeboer-debug.github.io/cryptotracker/
+📦 **Repo:** https://github.com/bowiewildeboer-debug/cryptotracker (publiek)
+⏰ Draait elke nacht om 01:17 UTC.
 
 ---
 
@@ -82,6 +86,7 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | 6 | Web-app (PWA) — tabel + portefeuillegrafiek | ✅ klaar | `web/` — getest in de browser, mobiel en desktop |
 | 7 | Web Push notificaties | ✅ klaar | `src/notify/push.ts`, `web/push.js`, `scripts/send-push.ts` |
 | 8 | GitHub Actions: cron + deploy | ✅ klaar | `.github/workflows/daily.yml`, `README.md` |
+| 8b | Publiceren: repo, Pages, secrets, eerste run | ✅ klaar | Live, eerste twee dagen data binnen |
 | 9 | Validatie tegen jouw TradingView-chart | 🟡 volgende | Handmatige check van 5 munten |
 
 ---
@@ -111,7 +116,8 @@ Elke chunk is los afrondbaar en test-baar. Na elke chunk wordt dit bestand bijge
 | H | 15 échte top-100-munten staan niet op Binance (HYPE #10, XMR #12, CRO, KAS, PI, FLR…) | — | ✅ **akkoord** — zo laten, wordt in het rapport getoond |
 | I | CoinGecko demo-key | — | ✅ **geregeld**, staat in `.env` (gitignored) → run ging van 63s naar 3s |
 | J | Repo-groei door dagelijks een groot bestand te committen | — | ✅ **opgelost** — `latest.json` wordt niet meer gecommit maar direct naar Pages gepubliceerd; alleen de dagsnapshots (~11 KB) gaan de repo in |
-| K | Eerste live run + meldingen koppelen | Chunk 9 | ❓ **actie voor Bowie** — zie `README.md` |
+| K | Eerste live run | — | ✅ **klaar** — draait, 100 munten, ~35 s per run |
+| L | Meldingen koppelen op je Android-toestel | — | ❓ **actie voor Bowie** — app op beginscherm, dan stap 5 uit `README.md` |
 
 ---
 
@@ -191,3 +197,12 @@ Niets half-af achtergelaten.
   Pages-projecten van een account delen.
   Workflow draait dagelijks om 01:17 UTC, draait eerst de tests, commit alleen de dagsnapshot
   en publiceert de app als artefact.
+- **2026-09-21 s1** — **Live gezet.** Commit-e-mailadres op verzoek van Bowie uit de hele
+  historie gehaald (nu het GitHub-noreply-adres) vóór de push, inclusief de back-upref die
+  `filter-branch` achterlaat — die bevatte het oude adres nog.
+  Eerste CI-run faalde op HTTP 401 bij CoinGecko: de secrets waren met `gh secret set --body -`
+  gezet, en die vlag zet de **letterlijke waarde `-`** in plaats van van stdin te lezen. Zichtbaar
+  doordat GitHub overal `--` maskeerde in de log (`npx tsx src/cli.ts ***report all`).
+  Opnieuw gezet via stdin; tweede run geslaagd.
+  Let op: lokaal gaf de foute sleutel gewoon HTTP 200 — CoinGecko is alleen streng vanaf
+  datacenter-IP's. Zo'n fout is dus niet lokaal te reproduceren.
